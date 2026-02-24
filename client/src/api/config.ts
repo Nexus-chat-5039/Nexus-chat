@@ -1,5 +1,5 @@
 const API_URL_ENV = import.meta.env.VITE_API_URL
-const DEFAULT_API_URL = "https://nexus-chat-741603203940.europe-west1.run.app"
+const DEFAULT_API_URL = "https://nexus-chat-802528029195.europe-west1.run.app"
 
 if (!API_URL_ENV) {
     console.info(`VITE_API_URL not set. Using default backend: ${DEFAULT_API_URL}`)
