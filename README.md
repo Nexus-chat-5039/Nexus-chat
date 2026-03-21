@@ -133,6 +133,15 @@ npm run dev
 
 ---
 
+## Contribution & Branching Strategy
+
+This project follows a structured branch workflow:
+- **`master` / `main`**: Production-ready code. Commits here should only come from Pull Requests.
+- **`develop`**: Active development branch. All feature branches branch off from here.
+- **`feature/*`**: New features/fixes (e.g., `feature/ui-updates`) branch off from `develop` and make a PR to `develop`.
+
+---
+
 ## Roadmap
 - [ ] File attachments and parsing
 - [ ] User presence indicators (Online/Offline)
