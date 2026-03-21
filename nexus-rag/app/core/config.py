@@ -53,13 +53,13 @@ EMBEDDING_MODEL = os.getenv(
     "sentence-transformers/all-MiniLM-L6-v2",
 )
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))  # seconds
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
 
-if not GROQ_API_KEY:
-    logging.warning("GROQ_API_KEY is not set - AI features will not work")
+if not GEMINI_API_KEY:
+    logging.warning("GEMINI_API_KEY is not set - AI features will not work")
 
 # ============ HuggingFace / Systems ============
 TOKENIZERS_PARALLELISM = os.getenv("TOKENIZERS_PARALLELISM", "false").lower() == "true"
