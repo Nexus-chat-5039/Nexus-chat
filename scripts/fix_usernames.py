@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+"""Fix missing usernames in the users collection (moved from nexus-rag/fix_usernames.py)."""
+
 from pymongo import MongoClient
 import certifi
 import os
@@ -22,14 +25,14 @@ count = 0
 for user in users:
     email = user["email"]
     username = email.split("@")[0]
-    
+
     # Ensure generated username is unique
     base_username = username
     counter = 1
     while users_col.find_one({"username": username}):
         username = f"{base_username}{counter}"
         counter += 1
-        
+
     users_col.update_one({"_id": user["_id"]}, {"$set": {"username": username}})
     print(f"Updated user {email} -> {username}")
     count += 1
@@ -38,14 +41,14 @@ users_null = users_col.find({"username": None})
 for user in users_null:
     email = user["email"]
     username = email.split("@")[0]
-    
+
     # Ensure generated username is unique
     base_username = username
     counter = 1
     while users_col.find_one({"username": username}):
         username = f"{base_username}{counter}"
         counter += 1
-        
+
     users_col.update_one({"_id": user["_id"]}, {"$set": {"username": username}})
     print(f"Updated user {email} -> {username}")
     count += 1

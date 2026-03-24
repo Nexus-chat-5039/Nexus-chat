@@ -154,7 +154,7 @@ const MessageBubble = memo(function MessageBubble({
 
         <div className={`${bubbleClass} px-3 py-2 shadow-sm max-w-[92%] md:max-w-[85%] relative group/bubble`}>
           {/* Context Menu Button */}
-          <div className={`absolute top-1 ${isMe ? "left-[-28px]" : "right-[-28px]"} opacity-0 group-hover/bubble:opacity-100 transition-opacity hidden md:flex`}>
+          <div className={`absolute top-1 ${isMe ? "left-[-28px]" : "right-[-28px]"} flex md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity`}>
             <button
               onClick={() => { setShowDeleteMenu(!showDeleteMenu); setShowDeleteOptions(false) }}
               className="p-1.5 text-gray-400 hover:text-white bg-nexus-card/80 backdrop-blur-sm rounded-full border border-nexus-border/30 shadow-lg transition-all hover:scale-110"

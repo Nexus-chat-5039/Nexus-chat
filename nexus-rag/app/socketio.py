@@ -43,7 +43,7 @@ async def connect(sid, environ, auth):
             logger.warning(f"Connection rejected - invalid token from {sid}")
             return False
             
-        print(f"DEBUG: Socket connected for user {user} (sid: {sid})")
+        logger.debug(f"Socket connected for user {user} (sid: {sid})")
 
         # Fetch full user details from DB to get name/username
         from app.core.mongo import get_users_collection
@@ -164,7 +164,7 @@ async def send_message(sid, data):
     room = f"{group_id}:{chat_id}"
 
     reply_to = data.get("replyTo")
-    print(f"DEBUG: Received message with replyTo: {reply_to}")
+    logger.debug(f"Received message with replyTo: {reply_to}")
 
     # store message
     messages = get_message_collection()
@@ -223,9 +223,9 @@ async def send_message(sid, data):
                 "created_at": datetime.utcnow(),
                 "metadata": {"user_id": usr, "type": "chat_message"}
             })
-            print(f"Message vectorized for {usr}")
+            logger.debug(f"Message vectorized for {usr}")
         except Exception as e:
-            print(f"Vector Ingest Error: {e}")
+            logger.error(f"Vector Ingest Error: {e}")
 
     # Fire and forget (or safer: explicit task ref)
     asyncio.create_task(ingest_message(content, group_id, chat_id, user))
@@ -255,17 +255,14 @@ async def send_message(sid, data):
             sender = msg.get("user_id") if msg.get("role") == "user" else "Nexus AI"
             history_list.append({"role": msg["role"], "content": msg["content"], "sender": sender})
         history_list.reverse()
-        print(f"DEBUG HISTORY: {history_list}")
-        with open("debug_nexus_history.txt", "a") as f:
-            f.write(f"\n--- {datetime.utcnow()} ---\n")
-            f.write(str(history_list))
+        logger.debug(f"Message history for {user}: {history_list}")
         
         try:
             reply_to_context = None
             if reply_to:
                 # reply_to is a dict {id, sender, content}
                 reply_to_context = f"Replying to {reply_to.get('sender', 'Unknown')}: {reply_to.get('content', '')}"
-                print(f"DEBUG: Generated reply_to_context: {reply_to_context}")
+                logger.debug(f"Generated reply_to_context: {reply_to_context}")
 
             answer, _ = await process_chat_message(
                 user_query=content,
@@ -277,22 +274,30 @@ async def send_message(sid, data):
                 reply_to_context=reply_to_context
             )
 
+            # Store AI response in DB and emit with real _id
+            ai_msg_doc = {
+                "user_id": user,
+                "group_id": group_id,
+                "chat_id": chat_id,
+                "role": "assistant",
+                "content": answer,
+                "sender_name": "Nexus AI",
+                "created_at": datetime.utcnow(),
+            }
+            result = messages_col.insert_one(ai_msg_doc)
+
             await sio.emit(
                 "new_message",
                 {
                     "role": "assistant",
                     "content": answer,
+                    "id": str(result.inserted_id),
                 },
                 room=room,
             )
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"AI Generation failed: {e}")
-            with open("debug_nexus_error.txt", "a") as f:
-                f.write(f"\n--- ERROR {datetime.utcnow()} ---\n")
-                f.write(traceback.format_exc())
-            
+            logger.error(f"AI generation failed: {e}", exc_info=True)
+
             await sio.emit(
                 "new_message",
                 {

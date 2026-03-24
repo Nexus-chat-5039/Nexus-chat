@@ -2,8 +2,18 @@
 # Start Server
 echo "Starting Backend Server..."
 cd nexus-rag
-# Use the venv python explicitly
-../venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080 &
+
+# Set up venv if it doesn't exist
+if [ ! -d "venv" ]; then
+  echo "Creating virtual environment..."
+  python3 -m venv venv
+  source venv/bin/activate
+  pip install -r requirements.txt
+else
+  source venv/bin/activate
+fi
+
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080 &
 SERVER_PID=$!
 
 # Start Client

@@ -8,11 +8,9 @@ import socketio
 import logging
 import os
 import uvicorn
-import uvicorn
 
 from app.auth.router import router as auth_router
 from app.auth.otp_router import router as otp_router
-from app.api.history import router as history_router
 from app.api.ingest import router as ingest_router
 from app.api.query import router as query_router
 from app.api.messages import router as messages_router
@@ -57,7 +55,6 @@ fastapi_app.include_router(otp_router)
 fastapi_app.include_router(query_router, prefix="/api")
 fastapi_app.include_router(ingest_router, prefix="/api")
 fastapi_app.include_router(messages_router)
-fastapi_app.include_router(history_router)
 fastapi_app.include_router(groups_router)
 
 

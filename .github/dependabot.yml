@@ -2,7 +2,7 @@ version: 2
 updates:
   # Backend (Python)
   - package-ecosystem: "pip"
-    directory: "/backend"
+    directory: "/nexus-rag"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

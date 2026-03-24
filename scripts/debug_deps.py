@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+"""Debug dependency imports (moved from nexus-rag/debug_deps.py)."""
 
 try:
     import torch

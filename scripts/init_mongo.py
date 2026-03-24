@@ -1,25 +1,43 @@
-# debug_retrieval.py
+#!/usr/bin/env python3
+"""Debug retrieval test — standalone version (moved from nexus-rag/init_mongo.py)."""
+
 from pymongo import MongoClient
 import certifi
-from app.core.config import MONGO_URI
-from app.embeddings.embedder import Embedder
+import os
+from dotenv import load_dotenv
 
-# 1. Connect
+load_dotenv()
+
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    print("MONGO_URI not found in environment")
+    exit(1)
+
 client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["nexus"]
 collection = db["memory_vectors"]
 
-# 2. Get a real embedding
-print("Generatng embedding for query 'age of rajat'...")
+print("Generating embedding for query 'age of rajat'...")
+
+# NOTE: This script originally imported from app.embeddings.embedder.
+# Run from the nexus-rag/ directory if you need the app imports:
+#   cd nexus-rag && python -m scripts.init_mongo
+# Or install sentence-transformers and adapt as needed.
+try:
+    from app.embeddings.embedder import Embedder
+except ImportError:
+    print("ERROR: Run this script from the nexus-rag/ directory:")
+    print("  cd nexus-rag && python ../scripts/init_mongo.py")
+    exit(1)
+
 embedder = Embedder()
 query_embedding = embedder.embed("age of rajat")
 print(f"✅ Embedding generated. Dimensions: {len(query_embedding)}")
 
-# 3. Define the pipeline (Exact same as your app)
 pipeline = [
     {
         "$vectorSearch": {
-            "index": "vector_index",  # <--- CHECK THIS NAME
+            "index": "vector_index",
             "path": "embedding",
             "queryVector": query_embedding,
             "numCandidates": 100,
@@ -38,7 +56,6 @@ pipeline = [
     }
 ]
 
-# 4. Run Search
 print("\nRunning Vector Search...")
 try:
     results = list(collection.aggregate(pipeline))

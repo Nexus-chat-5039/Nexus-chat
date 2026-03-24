@@ -1,5 +1,9 @@
 import requests
 import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Login First
 API_URL = "http://localhost:8080"
@@ -87,7 +91,7 @@ def run():
     # I'll rely on existing messages if any, or just trust the upload worked and maybe I'll skip insert and just use what's there?
     # Better: use python mongo client to insert a message.
     
-    client = MongoClient("mongodb+srv://ADMIN:malik625@nexus-ai.cqbopk7.mongodb.net/?appName=Nexus-AI")
+    client = MongoClient(os.getenv("MONGO_URI"))
     db = client.nexus
     db.messages.insert_one({
         "user_id": EMAIL,
