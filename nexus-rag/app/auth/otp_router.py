@@ -66,15 +66,14 @@ def request_reset_otp(data: OTPRequest):
 
     db = get_db()
     user = db.users.find_one({"email": data.email})
-    if not user:
-        # Don't reveal if user exists? Or just 404? 
-        # For UX, 404 is clearer but less secure. Let's use generic message or 404 if safe.
-        # But if we return success for non-existent, we must simulate delay.
-        # Let's say "If user exists, OTP sent".
-        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user:
+        create_otp(data.email, "reset")
+    else:
+        # Don't reveal whether user exists — log it but return same response
+        logger.info(f"Reset OTP requested for non-existent email (not revealing to client)")
         
-    create_otp(data.email, "reset")
-    return {"message": "OTP sent to email"}
+    return {"message": "If this email is registered, a verification code has been sent."}
 
 @router.post("/verify-reset-otp")
 def verify_reset_otp(data: OTPVerifyRequest):

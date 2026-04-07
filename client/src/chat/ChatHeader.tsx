@@ -1,14 +1,16 @@
 import { memo } from "react"
 import logo from "../assets/logo.svg"
-import { Menu, Info } from "lucide-react"
+import { Menu, Info, Pin, Bookmark, MessageSquare } from "lucide-react"
 
 type Props = {
   title: string
   onToggleSidebar: () => void
   onOpenDetails: () => void
+  viewMode?: "all" | "pinned" | "bookmarked"
+  setViewMode?: (mode: "all" | "pinned" | "bookmarked") => void
 }
 
-const ChatHeader = memo(function ChatHeader({ title, onToggleSidebar, onOpenDetails }: Props) {
+const ChatHeader = memo(function ChatHeader({ title, onToggleSidebar, onOpenDetails, viewMode = "all", setViewMode }: Props) {
   return (
     <div className="flex items-center justify-between border-b border-nexus-border/30 bg-nexus-bg/60 backdrop-blur-xl shadow-sm px-4 md:px-6 py-3 sticky top-0 z-10">
       <div className="flex items-center gap-3">
@@ -40,13 +42,42 @@ const ChatHeader = memo(function ChatHeader({ title, onToggleSidebar, onOpenDeta
         </div>
       </div>
 
-      <button
-        onClick={onOpenDetails}
-        className="text-nexus-muted hover:text-white p-2 rounded-xl hover:bg-nexus-surface hover:scale-105 transition-all duration-200"
-        title="Group Info"
-      >
-        <Info className="w-5 h-5" />
-      </button>
+      <div className="flex items-center gap-1">
+        {setViewMode && (
+          <>
+            <button
+              onClick={() => setViewMode(viewMode === "all" ? "all" : "all")}
+              className={`p-2 rounded-xl transition-all duration-200 ${viewMode === "all" ? "text-nexus-primary bg-nexus-primary/10" : "text-nexus-muted hover:text-white hover:bg-nexus-surface"}`}
+              title="All Messages"
+            >
+              <MessageSquare className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode(viewMode === "pinned" ? "all" : "pinned")}
+              className={`p-2 rounded-xl transition-all duration-200 ${viewMode === "pinned" ? "text-amber-500 bg-amber-500/10" : "text-nexus-muted hover:text-white hover:bg-nexus-surface"}`}
+              title="Pinned Messages"
+            >
+              <Pin className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode(viewMode === "bookmarked" ? "all" : "bookmarked")}
+              className={`p-2 rounded-xl transition-all duration-200 ${viewMode === "bookmarked" ? "text-blue-400 bg-blue-500/10" : "text-nexus-muted hover:text-white hover:bg-nexus-surface"}`}
+              title="Bookmarked Messages"
+            >
+              <Bookmark className="w-4 h-4" />
+            </button>
+            <div className="w-px h-6 bg-nexus-border/50 mx-1"></div>
+          </>
+        )}
+
+        <button
+          onClick={onOpenDetails}
+          className="text-nexus-muted hover:text-white p-2 rounded-xl hover:bg-nexus-surface hover:scale-105 transition-all duration-200"
+          title="Group Info"
+        >
+          <Info className="w-5 h-5" />
+        </button>
+      </div>
     </div>
   )
 })

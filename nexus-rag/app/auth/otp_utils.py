@@ -1,5 +1,6 @@
 import secrets
 import hashlib
+import hmac
 import smtplib
 import logging
 from email.mime.text import MIMEText
@@ -32,8 +33,8 @@ def hash_otp(otp: str) -> str:
     return hashlib.sha256(otp.encode()).hexdigest()
 
 def verify_otp_hash(otp: str, hashed_otp: str) -> bool:
-    """Verify if the provided OTP matches the stored hash."""
-    return hash_otp(otp) == hashed_otp
+    """Verify if the provided OTP matches the stored hash (timing-safe)."""
+    return hmac.compare_digest(hash_otp(otp), hashed_otp)
 
 def send_email(to_email: str, subject: str, body: str):
     """Send an email via SMTP."""

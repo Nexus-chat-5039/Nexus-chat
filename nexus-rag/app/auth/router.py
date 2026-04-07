@@ -11,7 +11,7 @@ import string
 import shutil
 import os
 import logging
-import hashlib
+
 from pathlib import Path
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -55,7 +55,7 @@ def signup(data: SignupRequest):
     users.insert_one({
         "username": final_username,
         "email": data.email,
-        "password_hash": hash_password(hashlib.sha256(data.password.encode()).hexdigest()),
+        "password_hash": hash_password(data.password),
     })
 
     token = create_access_token({"sub": data.email, "username": final_username})
@@ -154,47 +154,58 @@ def get_me(current_user: dict = Depends(get_current_user)):
     }
 
 
+AVATAR_MAX_SIZE = 5 * 1024 * 1024  # 5 MB
+AVATAR_ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+
 @router.post("/profile/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
-    # Validation
-    if not file.content_type.startswith("image/"):
+    logger = logging.getLogger(__name__)
+
+    # Validate MIME type
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
     
+    # Validate extension
+    file_ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "").lower()
+    if file_ext not in AVATAR_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Allowed image types: {', '.join(AVATAR_ALLOWED_EXTENSIONS)}")
+    
+    # Read with size limit
+    contents = await file.read()
+    if len(contents) > AVATAR_MAX_SIZE:
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+    
     # Create valid filename
-    file_ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
     filename = f"user_{current_user['_id']}_avatar.{file_ext}"
     
-    # Ensure directory exists (redundant with main.py but safe)
+    # Ensure directory exists
     upload_dir = Path("app/static/avatars")
     upload_dir.mkdir(parents=True, exist_ok=True)
     
     file_path = upload_dir / filename
     
-    logger = logging.getLogger(__name__)
-    logger.info(f"Upload request from user: {current_user.get('email')} ({current_user.get('_id')})")
+    logger.info(f"Upload request from user: {current_user.get('email')}")
     
     # Save file
     try:
         with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        logger.info(f"File saved to: {file_path}")
+            buffer.write(contents)
     except Exception as e:
         logger.error(f"File save error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to save image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save image")
         
     # URL to access
     avatar_url = f"/static/avatars/{filename}"
     
     # Update DB
     db = get_db()
-    result = db.users.update_one(
+    db.users.update_one(
         {"_id": current_user["_id"]},
         {"$set": {"profile_image": avatar_url}}
     )
-    logger.info(f"DB Update Result - Matched: {result.matched_count}, Modified: {result.modified_count} for URL: {avatar_url}")
     
     return {"message": "Avatar uploaded successfully", "profile_image": avatar_url}
 
@@ -277,19 +288,28 @@ async def oauth_callback(provider: str, request: Request):
     # or use the first allowed origin.
     
     frontend_url = "http://localhost:5173"
-    # Attempt to pick a matching origin from ALLOWED_ORIGINS if possible, but it's tricky without a Referer
     if ALLOWED_ORIGINS:
-         frontend_url = ALLOWED_ORIGINS[0] # Default to first one
+         frontend_url = ALLOWED_ORIGINS[0]
     
-    # Check if header referer is in allowed origins
+    # Pick matching origin from Referer if available
     referer = request.headers.get("referer")
     if referer:
         for origin in ALLOWED_ORIGINS:
             if origin in referer:
                 frontend_url = origin
                 break
-                
-    response = JSONResponse({"status": "ok"})
-    response.status_code = 302
-    response.headers["Location"] = f"{frontend_url}/auth/callback?token={access_token}"
+    
+    # Set JWT as HttpOnly cookie instead of exposing in URL
+    from fastapi.responses import RedirectResponse
+    response = RedirectResponse(url=f"{frontend_url}/auth/callback", status_code=302)
+    is_secure = frontend_url.startswith("https://")
+    response.set_cookie(
+        key="nexus_token",
+        value=access_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=86400,
+        path="/",
+    )
     return response

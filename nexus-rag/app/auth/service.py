@@ -11,23 +11,20 @@ pwd_context = CryptContext(
 )
 
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
 # Password utilities (hashing & verification)
 # -------------------------------------------------------------------
 
 def normalize_password(password: str) -> str:
-    # Debug print
-    print(f"DEBUG: normalizing password of len {len(password)}")
-    hashed = hashlib.sha256(password.encode("utf-8")).hexdigest()
-    print(f"DEBUG: normalized to {hashed}")
-    return hashed
+    """
+    Normalize password to a fixed-length SHA-256 hex string.
+    This allows bcrypt to handle passwords of any length
+    (bcrypt silently truncates at 72 bytes).
+    """
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def hash_password(password: str) -> str:
-    """Hash a password securely."""
-    print(f"DEBUG: hash_password called for len {len(password)}")
-    norm = normalize_password(password)
-    print(f"DEBUG: passing {norm} to pwd_context")
-    return pwd_context.hash(norm)
+    """Hash a password securely: SHA-256 normalize → bcrypt."""
+    return pwd_context.hash(normalize_password(password))
 
 
 def verify_password(plain: str, hashed: str) -> bool:

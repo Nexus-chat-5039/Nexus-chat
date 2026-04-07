@@ -85,7 +85,13 @@ export function useMessages({
                             sender_image: msg.sender_image,
                             replyTo: msg.replyTo,
                             is_deleted: msg.is_deleted,
-                          },
+                            reactions: msg.reactions || {},
+                            is_pinned: msg.is_pinned || false,
+                            bookmarked_by: msg.bookmarked_by || [],
+                            thread_id: msg.thread_id,
+                            reply_count: msg.reply_count || 0,
+                            attachments: msg.attachments || []
+                          } as Message,
                         ],
                       }
                     : chat
@@ -115,7 +121,7 @@ export function useMessages({
       )
     }
 
-    function onMessageUpdated(data: { id: string; content: string; chat_id: string; group_id: string }) {
+    function onMessageUpdated(data: Partial<Message> & { id: string; chat_id: string; group_id: string; increment_reply_count?: number }) {
       setGroups((prev) =>
         prev.map((group) =>
           group.id === data.group_id
@@ -125,11 +131,20 @@ export function useMessages({
                   chat.id === data.chat_id
                     ? {
                         ...chat,
-                        messages: chat.messages.map((m) =>
-                          m.id === data.id || m.id.endsWith(data.id)
-                            ? { ...m, content: data.content, is_edited: true }
-                            : m
-                        ),
+                        messages: chat.messages.map((m) => {
+                          if (m.id === data.id || m.id.endsWith(data.id)) {
+                            return { 
+                              ...m, 
+                              content: data.content ?? m.content, 
+                              is_edited: data.content !== undefined ? true : m.is_edited,
+                              reactions: data.reactions !== undefined ? data.reactions : m.reactions,
+                              is_pinned: data.is_pinned !== undefined ? data.is_pinned : m.is_pinned,
+                              bookmarked_by: data.bookmarked_by !== undefined ? data.bookmarked_by : m.bookmarked_by,
+                              reply_count: data.increment_reply_count ? (m.reply_count || 0) + data.increment_reply_count : m.reply_count
+                            }
+                          }
+                          return m;
+                        }),
                       }
                     : chat
                 ),
@@ -191,6 +206,12 @@ export function useMessages({
                             sender_image: m.sender_image as string | undefined,
                             replyTo: m.replyTo as Message["replyTo"],
                             is_deleted: m.is_deleted as boolean | undefined,
+                            reactions: (m.reactions as Record<string, string[]>) || {},
+                            is_pinned: (m.is_pinned as boolean) || false,
+                            bookmarked_by: (m.bookmarked_by as string[]) || [],
+                            thread_id: m.thread_id as string | undefined,
+                            reply_count: (m.reply_count as number) || 0,
+                            attachments: (m.attachments as Message["attachments"]) || []
                           })),
                         }
                       : chat
@@ -210,8 +231,14 @@ export function useMessages({
 
   // Actions
   const sendMessage = useCallback(
-    (text: string, triggerAi: boolean = false, replyTo?: Message["replyTo"]) => {
-      if (!text.trim()) return
+    (
+      text: string, 
+      triggerAi: boolean = false, 
+      replyTo?: Message["replyTo"], 
+      attachments?: Message["attachments"], 
+      threadId?: string
+    ) => {
+      if (!text.trim() && (!attachments || attachments.length === 0)) return
 
       setGroups((prev) =>
         prev.map((group) =>
@@ -231,6 +258,12 @@ export function useMessages({
                             sender: userEmail,
                             sender_image: profileImage || undefined,
                             replyTo,
+                            reactions: {},
+                            is_pinned: false,
+                            bookmarked_by: [],
+                            thread_id: threadId,
+                            reply_count: 0,
+                            attachments: attachments || []
                           },
                         ],
                       }
@@ -247,6 +280,8 @@ export function useMessages({
         content: text,
         trigger_ai: triggerAi,
         replyTo,
+        attachments: attachments || [],
+        thread_id: threadId
       })
     },
     [userEmail, profileImage, activeGroupIdRef, activeChatIdRef, setGroups]
@@ -321,10 +356,49 @@ export function useMessages({
     [activeGroupIdRef, activeChatIdRef, setGroups]
   )
 
+  const toggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      socket.emit("toggle_reaction", {
+        message_id: messageId,
+        emoji,
+        group_id: activeGroupIdRef.current,
+        chat_id: activeChatIdRef.current,
+      })
+      // Optimistic upate missing for brevity, real-time will correct
+    },
+    [activeGroupIdRef, activeChatIdRef]
+  )
+
+  const togglePin = useCallback(
+    (messageId: string, isPinned: boolean) => {
+      socket.emit("toggle_pin", {
+        message_id: messageId,
+        is_pinned: isPinned,
+        group_id: activeGroupIdRef.current,
+        chat_id: activeChatIdRef.current,
+      })
+    },
+    [activeGroupIdRef, activeChatIdRef]
+  )
+
+  const toggleBookmark = useCallback(
+    (messageId: string) => {
+      socket.emit("toggle_bookmark", {
+        message_id: messageId,
+        group_id: activeGroupIdRef.current,
+        chat_id: activeChatIdRef.current,
+      })
+    },
+    [activeGroupIdRef, activeChatIdRef]
+  )
+
   return {
     isTyping,
     sendMessage,
     deleteMessage,
     editMessage,
+    toggleReaction,
+    togglePin,
+    toggleBookmark,
   }
 }

@@ -1,6 +1,7 @@
 import socketio
 import asyncio
 import logging
+import re
 from jose import jwt
 from datetime import datetime
 import random
@@ -20,6 +21,32 @@ sio = socketio.AsyncServer(
 )
 
 socket_app = socketio.ASGIApp(sio, socketio_path="")
+
+# ── Security helpers ──────────────────────────────────────────────────
+MAX_MESSAGE_LENGTH = 10_000  # 10k chars
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+
+def sanitize_content(text: str) -> str:
+    """Strip HTML tags and enforce max length."""
+    text = _HTML_TAG_RE.sub('', text)
+    return text[:MAX_MESSAGE_LENGTH]
+
+
+def _check_group_membership(user_email: str, group_id: str) -> bool:
+    """Check if user is a member/owner of the group."""
+    if group_id.startswith(f"personal_{user_email}"):
+        return True
+    try:
+        import bson
+        from app.core.mongo import get_db
+        db = get_db()
+        oid = bson.ObjectId(group_id)
+        group = db.groups.find_one({"_id": oid})
+        if not group:
+            return False
+        return user_email in group.get("members", []) or group.get("user_id") == user_email
+    except Exception:
+        return False
 
 
 def decode_token(token: str):
@@ -83,13 +110,26 @@ async def disconnect(sid):
 
 @sio.event
 async def join_room(sid, data):
-    """Handle room join requests"""
+    """Handle room join requests — with authorization check"""
     try:
         if not data or "group_id" not in data or "chat_id" not in data:
             logger.warning(f"Invalid join_room data from {sid}: {data}")
             return
         
-        room = f"{data['group_id']}:{data['chat_id']}"
+        session = await sio.get_session(sid)
+        user = session.get("user")
+        if not user:
+            logger.warning(f"Unauthenticated join_room from {sid}")
+            return
+        
+        group_id = data['group_id']
+        
+        # Verify membership
+        if not _check_group_membership(user, group_id):
+            logger.warning(f"Unauthorized join_room: {user} tried to join group {group_id}")
+            return
+        
+        room = f"{group_id}:{data['chat_id']}"
         await sio.enter_room(sid, room)
         logger.debug(f"Client {sid} joined room: {room}")
         
@@ -159,12 +199,17 @@ async def send_message(sid, data):
 
     group_id = data["group_id"]
     chat_id = data["chat_id"]
-    content = data["content"]
+    content = sanitize_content(data.get("content", ""))
+    
+    if not content.strip():
+        return  # reject empty messages
 
     room = f"{group_id}:{chat_id}"
 
     reply_to = data.get("replyTo")
-    logger.debug(f"Received message with replyTo: {reply_to}")
+    thread_id = data.get("thread_id")
+    attachments = data.get("attachments", [])
+    logger.debug(f"Received message with replyTo: {reply_to}, thread_id: {thread_id}")
 
     # store message
     messages = get_message_collection()
@@ -176,10 +221,23 @@ async def send_message(sid, data):
         "content": content,
         "sender_name": sender_name,  # Store display name
         "created_at": datetime.utcnow(),
+        "reactions": {},
+        "is_pinned": False,
+        "bookmarked_by": [],
+        "thread_id": thread_id,
+        "reply_count": 0,
+        "attachments": attachments
     }
     
     if reply_to:
         message_doc["replyTo"] = reply_to
+
+    if thread_id:
+        from bson import ObjectId
+        messages.update_one(
+            {"_id": ObjectId(thread_id)},
+            {"$inc": {"reply_count": 1}}
+        )
 
     messages.insert_one(message_doc)
 
@@ -190,7 +248,13 @@ async def send_message(sid, data):
         "sender": user,  # Keep email for identity
         "sender_name": sender_name,  # Add display name
         "sender_image": sender_image, # Add display image
-        "id": str(message_doc["_id"]) # CRITICAL: Return DB ID so client can delete/reference it
+        "id": str(message_doc["_id"]), # CRITICAL: Return DB ID so client can delete/reference it
+        "reactions": {},
+        "is_pinned": False,
+        "bookmarked_by": [],
+        "thread_id": thread_id,
+        "reply_count": 0,
+        "attachments": attachments
     }
     
     if reply_to:
@@ -201,6 +265,15 @@ async def send_message(sid, data):
         emit_data,
         room=room,
     )
+    
+    if thread_id:
+        # Also emit a message_updated for the parent to update reply_count
+        await sio.emit("message_updated", {
+            "id": thread_id,
+            "group_id": group_id,
+            "chat_id": chat_id,
+            "increment_reply_count": 1
+        }, room=room)
 
     # Background: Embed and Store in Vector DB
     # We run this in background so we don't block the ACK to the client
@@ -443,3 +516,129 @@ async def edit_message(sid, data):
 
     except Exception as e:
         logger.error(f"Error in edit_message: {e}", exc_info=True)
+
+
+@sio.event
+async def toggle_reaction(sid, data):
+    try:
+        session = await sio.get_session(sid)
+        user = session["user"]
+        
+        message_id = data.get("message_id")
+        emoji = data.get("emoji")
+        group_id = data.get("group_id")
+        chat_id = data.get("chat_id")
+        
+        if not all([message_id, emoji, group_id, chat_id]):
+            return
+            
+        from app.core.mongo import get_message_collection
+        from bson import ObjectId
+        messages = get_message_collection()
+        
+        msg = messages.find_one({"_id": ObjectId(message_id)})
+        if not msg: return
+        
+        reactions = msg.get("reactions", {})
+        users = reactions.get(emoji, [])
+        if user in users:
+            users.remove(user)
+            if not users:
+                del reactions[emoji]
+            else:
+                reactions[emoji] = users
+        else:
+            users.append(user)
+            reactions[emoji] = users
+            
+        messages.update_one(
+            {"_id": ObjectId(message_id)},
+            {"$set": {"reactions": reactions}}
+        )
+        
+        room = f"{group_id}:{chat_id}"
+        await sio.emit("message_updated", {
+            "id": message_id,
+            "reactions": reactions,
+            "group_id": group_id,
+            "chat_id": chat_id
+        }, room=room)
+        
+    except Exception as e:
+        logger.error(f"Error in toggle_reaction: {e}", exc_info=True)
+
+
+@sio.event
+async def toggle_pin(sid, data):
+    try:
+        session = await sio.get_session(sid)
+        message_id = data.get("message_id")
+        group_id = data.get("group_id")
+        chat_id = data.get("chat_id")
+        is_pinned = data.get("is_pinned", True)
+        
+        if not all([message_id, group_id, chat_id]):
+            return
+            
+        from app.core.mongo import get_message_collection
+        from bson import ObjectId
+        messages = get_message_collection()
+        
+        messages.update_one(
+            {"_id": ObjectId(message_id)},
+            {"$set": {"is_pinned": is_pinned}}
+        )
+        
+        room = f"{group_id}:{chat_id}"
+        await sio.emit("message_updated", {
+            "id": message_id,
+            "is_pinned": is_pinned,
+            "group_id": group_id,
+            "chat_id": chat_id
+        }, room=room)
+        
+    except Exception as e:
+        logger.error(f"Error in toggle_pin: {e}", exc_info=True)
+
+
+@sio.event
+async def toggle_bookmark(sid, data):
+    try:
+        session = await sio.get_session(sid)
+        user = session["user"]
+        
+        message_id = data.get("message_id")
+        group_id = data.get("group_id")
+        chat_id = data.get("chat_id")
+        
+        if not all([message_id, group_id, chat_id]):
+            return
+            
+        from app.core.mongo import get_message_collection
+        from bson import ObjectId
+        messages = get_message_collection()
+        
+        msg = messages.find_one({"_id": ObjectId(message_id)})
+        if not msg: return
+        
+        bookmarks = msg.get("bookmarked_by", [])
+        if user in bookmarks:
+            bookmarks.remove(user)
+        else:
+            bookmarks.append(user)
+            
+        messages.update_one(
+            {"_id": ObjectId(message_id)},
+            {"$set": {"bookmarked_by": bookmarks}}
+        )
+        
+        # Emit only back to the user since bookmarks are private
+        await sio.emit("message_updated", {
+            "id": message_id,
+            "bookmarked_by": bookmarks,
+            "group_id": group_id,
+            "chat_id": chat_id
+        }, room=sid)
+        
+    except Exception as e:
+        logger.error(f"Error in toggle_bookmark: {e}", exc_info=True)

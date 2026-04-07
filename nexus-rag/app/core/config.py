@@ -6,7 +6,7 @@ load_dotenv()
 
 # ============ Application Settings ============
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # ============ Logging Configuration ============
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # ============ JWT Configuration ============
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
 
 # Validate critical JWT settings
 if not JWT_SECRET:
@@ -32,6 +32,13 @@ if not JWT_SECRET:
 # ============ OAuth Configuration ============
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+# Separate session secret (fallback to JWT_SECRET if not set, but warn)
+SESSION_SECRET = os.getenv("SESSION_SECRET")
+if not SESSION_SECRET:
+    import secrets as _secrets
+    SESSION_SECRET = _secrets.token_hex(32)
+    logger.warning("SESSION_SECRET not set — using a random ephemeral key (sessions won't survive restarts)")
 
 
 # ============ MongoDB Configuration ============

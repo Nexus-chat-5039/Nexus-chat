@@ -10,6 +10,7 @@ type Props = {
   onReply: (message: Message) => void
   onDelete: (messageId: string, type: "everyone" | "me") => void
   onEdit: (messageId: string, content: string) => void
+  onOpenThread?: (message: Message) => void
 }
 
 function MessageSkeleton() {
@@ -33,6 +34,7 @@ const MessageList = memo(function MessageList({
   onReply,
   onDelete,
   onEdit,
+  onOpenThread,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -67,6 +69,7 @@ const MessageList = memo(function MessageList({
             onReply={onReply}
             onDelete={onDelete}
             onEdit={onEdit}
+            onOpenThread={onOpenThread}
           />
         ))}
 

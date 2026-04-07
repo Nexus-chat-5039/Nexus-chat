@@ -1,11 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.embeddings.embedder import embed_text
 from app.vectorstore.store import vector_store
+from app.auth.dependencies import get_current_user
 
 router = APIRouter()
 
 @router.post("/ingest")
-def ingest_text(room_id: str, text: str):
+def ingest_text(room_id: str, text: str, user=Depends(get_current_user)):
     # MOVED INSIDE: Calculate embedding for the specific text received in this request
     embedding = embed_text(text)
 

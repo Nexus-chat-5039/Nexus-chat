@@ -26,7 +26,13 @@ type WorkspaceContextType = {
   isConnected: boolean
   isLoading: boolean
   error: string | null
-  sendMessage: (text: string, triggerAi?: boolean, replyTo?: Message["replyTo"]) => void
+  sendMessage: (
+    text: string,
+    triggerAi?: boolean,
+    replyTo?: Message["replyTo"],
+    attachments?: Message["attachments"],
+    threadId?: string
+  ) => void
   createGroup: (name: string) => Promise<void>
   createChat: (title: string) => Promise<void>
   deleteGroup: (groupId: string) => Promise<void>
@@ -36,6 +42,9 @@ type WorkspaceContextType = {
   removeMember: (groupId: string, email: string) => Promise<void>
   deleteMessage: (messageId: string, type: "everyone" | "me") => void
   editMessage: (messageId: string, content: string) => void
+  toggleReaction: (messageId: string, emoji: string) => void
+  togglePin: (messageId: string, isPinned: boolean) => void
+  toggleBookmark: (messageId: string) => void
   userEmail: string
   username: string
   profileImage: string | null
@@ -149,6 +158,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     sendMessage,
     deleteMessage,
     editMessage,
+    toggleReaction,
+    togglePin,
+    toggleBookmark,
   } = useMessages({
     activeGroupId,
     activeChatId,
@@ -184,6 +196,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       removeMember,
       deleteMessage,
       editMessage,
+      toggleReaction,
+      togglePin,
+      toggleBookmark,
       userEmail,
       username,
       profileImage,
@@ -193,6 +208,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       isTyping, isConnected, isLoading, error,
       sendMessage, createGroup, createChat, deleteGroup, deleteChat,
       joinGroup, leaveGroup, removeMember, deleteMessage, editMessage,
+      toggleReaction, togglePin, toggleBookmark,
       userEmail, username, profileImage,
     ]
   )

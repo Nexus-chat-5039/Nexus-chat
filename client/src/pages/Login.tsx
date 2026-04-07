@@ -11,6 +11,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
+
   const { login } = useAuth()
   const navigate = useNavigate()
 
@@ -120,7 +121,8 @@ export default function Login() {
       navigate("/chat")
     } catch (err: unknown) {
       console.error(err)
-      setError(err instanceof Error ? err.message : "Login failed. Please try again.")
+      const msg = err instanceof Error ? err.message : "Login failed. Please try again."
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -128,6 +130,7 @@ export default function Login() {
 
   return (
     <AuthLayout title="Login" subtitle="Welcome back">
+      {/* ── Email / Username ─────────────────────────────────────────── */}
       <input
         type="text"
         value={identifier}
@@ -146,6 +149,7 @@ export default function Login() {
         "
       />
 
+      {/* ── Password ─────────────────────────────────────────────────── */}
       <input
         type="password"
         value={password}

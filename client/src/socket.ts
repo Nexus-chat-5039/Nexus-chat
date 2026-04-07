@@ -1,22 +1,21 @@
-import { io, Socket } from "socket.io-client"
-
+import { io } from "socket.io-client"
 
 import { API_URL } from "./api/config"
 
+// Create socket with auth factory — token is read fresh on each connect attempt
 export const socket = io(API_URL, {
   autoConnect: false,
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionDelay: 1000,
   reconnectionAttempts: 5,
+  auth: () => {
+    const token = localStorage.getItem("nexus_token")
+    return token ? { token } : {}
+  },
 })
 
-// Update auth token on connection
 socket.on("connect", () => {
-  const token = localStorage.getItem("nexus_token")
-  if (token) {
-    socket.auth = { token }
-  }
   console.log("Socket connected:", socket.id)
 })
 
@@ -31,7 +30,7 @@ socket.on("disconnect", (reason: string) => {
 // Helper to update auth token
 export function updateSocketAuth(token: string | null) {
   if (token) {
-    socket.auth = { token }
+    // Auth factory above will pick this up on next connect
     if (!socket.connected) {
       socket.connect()
     }

@@ -3,6 +3,7 @@ import Sidebar from "./Sidebar"
 import ChatHeader from "./ChatHeader"
 import MessageList from "./MessageList"
 import MessageInput from "./MessageInput"
+import ThreadSidebar from "./ThreadSidebar"
 import { useWorkspace } from "../context/WorkspaceContext"
 import { ErrorBoundary } from "../components/ErrorBoundary"
 import GroupDetailsModal from "../components/GroupDetailsModal"
@@ -12,6 +13,8 @@ export default function ChatLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth > 768 : true)
   const [showGroupDetails, setShowGroupDetails] = useState(false)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [activeThreadMessage, setActiveThreadMessage] = useState<Message | null>(null)
+  const [viewMode, setViewMode] = useState<"all" | "pinned" | "bookmarked">("all")
 
   useEffect(() => {
     const handleResize = () => {
@@ -64,7 +67,7 @@ export default function ChatLayout() {
   }, [])
 
   const handleSend = useCallback(
-    (text: string, triggerAi: boolean) => {
+    (text: string, triggerAi: boolean, attachments?: any[]) => {
       sendMessage(
         text,
         triggerAi,
@@ -74,7 +77,8 @@ export default function ChatLayout() {
               sender: replyingTo.sender_name || replyingTo.sender || "",
               content: replyingTo.content,
             }
-          : undefined
+          : undefined,
+        attachments
       )
       setReplyingTo(null)
     },
@@ -128,6 +132,8 @@ export default function ChatLayout() {
             title={activeChat.title}
             onToggleSidebar={toggleSidebar}
             onOpenDetails={openDetails}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
           />
 
           {isLoading ? (
@@ -139,13 +145,18 @@ export default function ChatLayout() {
             </div>
           ) : (
             <MessageList
-              messages={activeChat.messages}
+              messages={activeChat.messages.filter(m => {
+                if (viewMode === "pinned") return m.is_pinned
+                if (viewMode === "bookmarked") return m.bookmarked_by?.includes(userEmail)
+                return !m.thread_id // For 'all', just exclude thread replies
+              })}
               isTyping={isTyping}
               userEmail={userEmail}
               userImage={profileImage}
               onReply={handleReply}
               onDelete={deleteMessage}
               onEdit={editMessage}
+              onOpenThread={setActiveThreadMessage}
             />
           )}
 
@@ -156,6 +167,16 @@ export default function ChatLayout() {
             onCancelReply={cancelReply}
           />
         </div>
+
+        {/* Thread Sidebar */}
+        {activeThreadMessage && (
+          <ThreadSidebar 
+            parentMessage={activeThreadMessage}
+            groupId={activeGroupId}
+            chatId={activeChatId}
+            onClose={() => setActiveThreadMessage(null)}
+          />
+        )}
 
         {/* Group Details Modal */}
         {activeGroup && (

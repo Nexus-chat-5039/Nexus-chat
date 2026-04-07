@@ -4,6 +4,14 @@ export type ReplyTo = {
   content: string
 }
 
+export type Attachment = {
+  id: string
+  url: string
+  type: "image" | "file"
+  name: string
+  size?: number
+}
+
 export type Message = {
   id: string
   role: "user" | "assistant"
@@ -14,6 +22,12 @@ export type Message = {
   replyTo?: ReplyTo
   is_deleted?: boolean
   is_edited?: boolean
+  reactions?: Record<string, string[]> // Object mapping emoji to user emails
+  is_pinned?: boolean
+  bookmarked_by?: string[]
+  thread_id?: string
+  reply_count?: number
+  attachments?: Attachment[]
 }
 
 export type Chat = {

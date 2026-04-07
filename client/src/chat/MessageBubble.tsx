@@ -6,8 +6,9 @@ import { getImageUrl } from "../api/config"
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { motion, useAnimation, type PanInfo } from "framer-motion"
-import { Reply } from "lucide-react"
+import { Reply, MessageSquare, Pin, Bookmark, Paperclip, Check, MoreVertical } from "lucide-react"
 import type { Message } from "../types"
+import { useWorkspace } from "../context/WorkspaceContext"
 
 const COLORS = [
   "#e542a3", "#02a698", "#e91e63", "#9c27b0", "#673ab7", "#3f51b5",
@@ -73,6 +74,7 @@ type Props = {
   onReply?: (message: Message) => void
   onDelete: (messageId: string, type: "everyone" | "me") => void
   onEdit?: (messageId: string, content: string) => void
+  onOpenThread?: (message: Message) => void
 }
 
 const MessageBubble = memo(function MessageBubble({
@@ -82,7 +84,10 @@ const MessageBubble = memo(function MessageBubble({
   onReply,
   onDelete,
   onEdit,
+  onOpenThread,
 }: Props) {
+  const { toggleReaction, togglePin, toggleBookmark } = useWorkspace()
+  
   const isMe = message.role === "user" && message.sender === currentUserId
   const isOtherUser = message.role === "user" && !isMe
   const isAI = message.role === "assistant"
@@ -154,12 +159,28 @@ const MessageBubble = memo(function MessageBubble({
 
         <div className={`${bubbleClass} px-3 py-2 shadow-sm max-w-[92%] md:max-w-[85%] relative group/bubble`}>
           {/* Context Menu Button */}
-          <div className={`absolute top-1 ${isMe ? "left-[-28px]" : "right-[-28px]"} flex md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity`}>
+          <div className={`absolute -top-3 ${isMe ? "left-[-40px]" : "right-[-40px]"} flex md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity`}>
+            {/* Quick Emoji Picker */}
+            <div className={`flex bg-nexus-card/80 backdrop-blur-sm rounded-full border border-nexus-border/30 shadow-lg px-1 py-1 mr-1 relative group/emojis items-center z-10 hover:z-30`}>
+              <span className="text-sm px-1 cursor-pointer grayscale group-hover/emojis:grayscale-0 transition-all opacity-70 group-hover/emojis:opacity-100">😀</span>
+              <div className="absolute top-9 left-1/2 -translate-x-1/2 hidden group-hover/emojis:flex bg-nexus-sidebar border border-nexus-border rounded-full shadow-2xl p-1 gap-1 w-max">
+                {["👍", "❤️", "😂", "😮", "😢", "🔥", "👀", "💯"].map(emoji => (
+                  <button 
+                    key={emoji} 
+                    onClick={() => { toggleReaction(message.id, emoji) }} 
+                    className={`hover:bg-white/10 p-1.5 rounded-full transition-transform hover:scale-125 text-lg leading-none ${message.reactions?.[emoji]?.includes(currentUserId) ? "bg-white/10" : ""}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={() => { setShowDeleteMenu(!showDeleteMenu); setShowDeleteOptions(false) }}
-              className="p-1.5 text-gray-400 hover:text-white bg-nexus-card/80 backdrop-blur-sm rounded-full border border-nexus-border/30 shadow-lg transition-all hover:scale-110"
+              className="p-1.5 text-gray-400 hover:text-white bg-nexus-card/80 backdrop-blur-sm rounded-full border border-nexus-border/30 shadow-lg transition-all hover:scale-110 z-20"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+              <MoreVertical size={14} />
             </button>
 
             {showDeleteMenu && (
@@ -174,6 +195,26 @@ const MessageBubble = memo(function MessageBubble({
                       className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors flex items-center gap-2"
                     >
                       <Reply size={14} /> Reply
+                    </button>
+                    {!message.thread_id && (
+                    <button
+                      onClick={() => { onOpenThread?.(message); setShowDeleteMenu(false) }}
+                      className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors flex items-center gap-2"
+                    >
+                      <MessageSquare size={14} /> Reply in Thread
+                    </button>
+                    )}
+                    <button
+                      onClick={() => { togglePin(message.id, !message.is_pinned); setShowDeleteMenu(false) }}
+                      className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors flex items-center gap-2"
+                    >
+                      <Pin size={14} className={message.is_pinned ? "fill-white/30" : ""} /> {message.is_pinned ? "Unpin" : "Pin"}
+                    </button>
+                    <button
+                      onClick={() => { toggleBookmark(message.id); setShowDeleteMenu(false) }}
+                      className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors flex items-center gap-2"
+                    >
+                      <Bookmark size={14} className={message.bookmarked_by?.includes(currentUserId) ? "fill-white/30" : ""} /> {message.bookmarked_by?.includes(currentUserId) ? "Remove Bookmark" : "Bookmark"}
                     </button>
                     {isMe && (
                       <button
@@ -243,6 +284,30 @@ const MessageBubble = memo(function MessageBubble({
 
           {/* Content */}
           <div className="whitespace-pre-wrap text-[15px] leading-relaxed relative min-w-[60px]">
+            
+            {/* Context Indicators (Pinned/Bookmarked) */}
+            <div className="flex gap-2 mb-1 absolute -top-[20px] left-0 pointer-events-none">
+              {message.is_pinned && <span className="bg-amber-500/10 text-amber-500 rounded p-0.5"><Pin size={10} className="fill-amber-500/20" /></span>}
+              {message.bookmarked_by?.includes(currentUserId) && <span className="bg-blue-500/10 text-blue-400 rounded p-0.5"><Bookmark size={10} className="fill-blue-400/30" /></span>}
+            </div>
+
+            {/* Attachments */}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2 mt-1">
+                {message.attachments.map(att => (
+                   att.type === "image" ? (
+                      <a key={att.id} href={att.url} target="_blank" rel="noreferrer" className="block max-w-[240px] rounded-lg overflow-hidden border border-white/10 hover:opacity-90 transition-opacity">
+                         <img src={att.url} alt={att.name} className="w-full h-auto max-h-[200px] object-cover" loading="lazy" />
+                      </a>
+                   ) : (
+                      <a key={att.id} href={att.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-2 rounded bg-black/20 hover:bg-black/30 text-sm border border-white/5 transition-colors max-w-full">
+                         <Paperclip size={14} className="opacity-70 flex-shrink-0" />
+                         <span className="truncate flex-1">{att.name}</span>
+                      </a>
+                   )
+                ))}
+              </div>
+            )}
             {isEditing ? (
               <div className="flex flex-col gap-2 min-w-[200px]">
                 <textarea
@@ -295,6 +360,43 @@ const MessageBubble = memo(function MessageBubble({
           {/* Edited indicator */}
           {message.is_edited && (
             <span className="text-[10px] text-nexus-muted/60 italic mt-0.5 block">edited</span>
+          )}
+          {/* Thread Indicator */}
+          {message.reply_count && message.reply_count > 0 ? (
+            <div 
+               className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-nexus-primary cursor-pointer hover:underline"
+               onClick={() => onOpenThread?.(message)}
+            >
+               <MessageSquare size={12} />
+               {message.reply_count} {message.reply_count === 1 ? "reply" : "replies"}
+            </div>
+          ) : null}
+
+          {/* Reactions */}
+          {message.reactions && Object.keys(message.reactions).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1 -mb-1 relative z-10">
+              {Object.entries(message.reactions).map(([emoji, users]) => {
+                if (!users || users.length === 0) return null
+                const hasReacted = users.includes(currentUserId)
+                return (
+                  <button
+                    key={emoji}
+                    onClick={(e) => { e.stopPropagation(); toggleReaction(message.id, emoji); }}
+                    title={users.join(", ")}
+                    className={`
+                      px-1.5 py-0.5 rounded-full text-[11px] leading-tight flex items-center gap-1 border
+                      ${hasReacted 
+                        ? "bg-nexus-primary/20 border-nexus-primary/30 font-bold" 
+                        : "bg-black/20 border-white/5 hover:bg-black/30"}
+                      transition-colors
+                    `}
+                  >
+                    <span>{emoji}</span>
+                    <span className="opacity-80 font-mono text-[10px]">{users.length}</span>
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
 

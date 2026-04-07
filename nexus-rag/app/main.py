@@ -15,8 +15,9 @@ from app.api.ingest import router as ingest_router
 from app.api.query import router as query_router
 from app.api.messages import router as messages_router
 from app.api.groups import router as groups_router
+from app.api.upload import router as upload_router
 from app.socketio import sio
-from app.core.config import ALLOWED_ORIGINS, RATE_LIMIT_ENABLED, RATE_LIMIT_PER_MINUTE, DEBUG
+from app.core.config import ALLOWED_ORIGINS, RATE_LIMIT_ENABLED, RATE_LIMIT_PER_MINUTE, DEBUG, SESSION_SECRET
 from app.core.middleware import RequestLoggingMiddleware, RateLimitMiddleware
 from app.core.mongo import initialize_database, close_database, check_health
 
@@ -27,19 +28,22 @@ fastapi_app = FastAPI(title="Nexus RAG Service")
 # Add request logging middleware
 fastapi_app.add_middleware(RequestLoggingMiddleware)
 
-# Add Session Middleware for OAuth
+# Add rate limiting middleware
+if RATE_LIMIT_ENABLED:
+    fastapi_app.add_middleware(RateLimitMiddleware, requests_per_minute=RATE_LIMIT_PER_MINUTE)
+
+# Add Session Middleware for OAuth (using dedicated session secret)
 from starlette.middleware.sessions import SessionMiddleware
-from app.core.config import JWT_SECRET
-fastapi_app.add_middleware(SessionMiddleware, secret_key=JWT_SECRET)
+fastapi_app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
 # Configure CORS (Added LAST so it runs FIRST)
 fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    expose_headers=["X-Request-ID", "X-Process-Time"]
 )
 
 # Socket.IO at /socket.io
@@ -47,6 +51,7 @@ fastapi_app.add_middleware(
 
 from fastapi.staticfiles import StaticFiles
 os.makedirs("app/static/avatars", exist_ok=True)
+os.makedirs("app/static/uploads", exist_ok=True)
 fastapi_app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Include routers
@@ -54,6 +59,7 @@ fastapi_app.include_router(auth_router)
 fastapi_app.include_router(otp_router)
 fastapi_app.include_router(query_router, prefix="/api")
 fastapi_app.include_router(ingest_router, prefix="/api")
+fastapi_app.include_router(upload_router, prefix="/api")
 fastapi_app.include_router(messages_router)
 fastapi_app.include_router(groups_router)
 
