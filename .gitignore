@@ -13,3 +13,9 @@ env
 # IDE settings
 .idea/
 .vscode/
+
+# Compiled Go binaries
+services/nexus-ai-gateway/gateway
+services/nexus-ai-worker/worker
+services/nexus-billing/billing
+services/nexus-api/api

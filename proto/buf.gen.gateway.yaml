@@ -1,0 +1,8 @@
+version: v1
+plugins:
+  - plugin: go
+    out: ../services/nexus-ai-gateway/pkg/pb
+    opt: paths=source_relative
+  - plugin: go-grpc
+    out: ../services/nexus-ai-gateway/pkg/pb
+    opt: paths=source_relative

@@ -1,0 +1,45 @@
+syntax = "proto3";
+package nexus.rag;
+
+option go_package = "pkg/pb/rag;rag";
+
+service RAGService {
+  rpc RetrieveContext (RetrieveRequest) returns (RetrieveResponse);
+  rpc EmbedAndStore (EmbedRequest) returns (EmbedResponse);
+}
+
+message RetrieveRequest {
+  string query = 1;
+  string tenant_id = 2;
+  string group_id = 3;
+  string chat_id = 4;
+  int32 top_k = 5;
+  string workspace_id = 6;
+}
+
+message RetrieveResponse {
+  repeated ContextChunk chunks = 1;
+  int32 total_tokens = 2;
+}
+
+message ContextChunk {
+  string content = 1;
+  float score = 2;
+  string source_user_id = 3;
+}
+
+message EmbedRequest {
+  string content = 1;
+  string tenant_id = 2;
+  string workspace_id = 3;
+  string group_id = 4;
+  string chat_id = 5;
+  string user_id = 6;
+  string role = 7;
+  int64 created_at = 8;
+}
+
+message EmbedResponse {
+  bool success = 1;
+  string message = 2;
+}

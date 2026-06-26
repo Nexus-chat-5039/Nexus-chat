@@ -18,7 +18,7 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
     const el = textareaRef.current
     if (el) {
       el.style.height = "auto"
-      el.style.height = Math.min(el.scrollHeight, 150) + "px"
+      el.style.height = Math.min(el.scrollHeight, 120) + "px"
     }
   }, [text])
 
@@ -32,29 +32,30 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
       if (!text.trim() || disabled) return
       onSend(text, triggerAi)
       setText("")
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto"
+      }
     },
     [text, disabled, onSend]
   )
 
   return (
-    <div className="border-t border-white/5 bg-nexus-bg/70 backdrop-blur-2xl p-2 pb-3 md:p-4 shadow-[0_-10px_40px_rgba(0,0,0,0.3)] relative z-20">
+    <div className="shrink-0 border-t border-nexus-border/20 bg-nexus-bg/80 backdrop-blur-2xl p-3 md:p-4 z-20">
       {/* Reply preview */}
       {replyingTo && (
-        <div className="mb-2 flex items-center justify-between rounded-xl bg-nexus-card border border-nexus-primary/20 p-2.5 pl-3.5 relative overflow-hidden animate-slideDown">
-          <div className="w-0.5 absolute left-0 top-0 bottom-0 bg-nexus-primary rounded-full" />
+        <div className="mb-2 flex items-center justify-between rounded-lg bg-nexus-card/70 border border-nexus-primary/15 p-2 pl-3 relative overflow-hidden animate-[slideDown_0.2s_ease-out]">
+          <div className="w-0.5 absolute left-0 top-0 bottom-0 bg-nexus-primary/40 rounded-full" />
           <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-            <span className="text-xs font-bold text-nexus-primary">
+            <span className="text-[10px] font-semibold text-nexus-primary/80">
               Replying to {replyingTo.sender_name || replyingTo.sender}
             </span>
-            <span className="text-xs text-nexus-muted truncate">
-              {replyingTo.content}
-            </span>
+            <span className="text-[11px] text-nexus-muted truncate">{replyingTo.content}</span>
           </div>
           <button
             onClick={onCancelReply}
-            className="ml-2 p-1 hover:bg-white/5 rounded-full text-nexus-muted hover:text-white transition-colors"
+            className="ml-2 p-1 hover:bg-white/5 rounded-full text-nexus-muted hover:text-nexus-text transition-colors"
           >
-            <X size={16} />
+            <X size={14} />
           </button>
         </div>
       )}
@@ -72,16 +73,17 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
               handleSend(false)
             }
           }}
-          placeholder={disabled ? "Nexus AI is replying…" : "Type a message..."}
+          placeholder={disabled ? "AI is thinking..." : "Type a message..."}
           className="
-            flex-1 resize-none rounded-2xl px-3 py-2.5 md:px-4 md:py-3 text-[15px] sm:text-sm
-            bg-nexus-card/80 backdrop-blur-sm text-white
-            placeholder:text-nexus-muted
-            outline-none border border-white/10 shadow-inner
-            focus:border-nexus-primary/60 focus:ring-2 focus:ring-nexus-primary/20 focus:bg-nexus-card
-            disabled:opacity-50
-            transition-all duration-300
-            scrollbar-thin
+            flex-1 resize-none rounded-xl px-4 py-2.5 text-sm
+            bg-nexus-card/70 text-nexus-text
+            placeholder:text-nexus-muted/50
+            outline-none border border-nexus-border/40
+            focus:border-nexus-primary/40 focus:ring-[3px] focus:ring-nexus-primary/8
+            focus:bg-nexus-card
+            disabled:opacity-40
+            transition-all duration-200
+            leading-5
           "
         />
 
@@ -90,16 +92,17 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
           onClick={() => handleSend(true)}
           disabled={disabled || !text.trim()}
           className="
-            flex items-center gap-2 rounded-2xl border border-nexus-primary/30 bg-nexus-primary/10 px-3 py-2.5 md:px-4 md:py-3
-            text-sm font-medium text-nexus-primary
-            hover:bg-nexus-primary/20 hover:border-nexus-primary/50
+            flex items-center gap-1.5 rounded-xl border border-nexus-primary/25
+            bg-nexus-primary/8 px-3 py-2.5
+            text-xs font-medium text-nexus-primary/80
+            hover:bg-nexus-primary/15 hover:border-nexus-primary/40
             active:scale-95 transition-all duration-150
-            disabled:opacity-40 disabled:cursor-not-allowed
+            disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100
           "
-          title="Send and ask AI"
+          title="Ask AI"
         >
-          <Sparkles className="w-4 h-4" />
-          <span className="hidden sm:inline">Ask AI</span>
+          <Sparkles className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">AI</span>
         </button>
 
         {/* Send Button */}
@@ -107,16 +110,25 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
           onClick={() => handleSend(false)}
           disabled={disabled || !text.trim()}
           className="
-            rounded-2xl bg-gradient-to-r from-nexus-primary to-rose-600 px-4 py-2.5 md:px-5 md:py-3
-            text-sm font-medium text-white shadow-lg shadow-nexus-primary/20
-            hover:shadow-nexus-primary/40 hover:brightness-110 active:scale-[0.98]
-            transition-all duration-300
-            disabled:opacity-40 disabled:cursor-not-allowed
+            rounded-xl bg-nexus-primary px-3.5 py-2.5
+            text-white shadow-md shadow-nexus-primary/15
+            hover:shadow-lg hover:shadow-nexus-primary/25 hover:brightness-110
+            active:scale-[0.95] active:duration-100
+            transition-all duration-200
+            disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100
+            disabled:shadow-none
           "
         >
           <Send className="w-4 h-4" />
         </button>
       </div>
+
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }

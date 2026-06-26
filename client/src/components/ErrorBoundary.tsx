@@ -1,5 +1,7 @@
 import { Component } from "react"
 import type { ReactNode } from "react"
+import { AlertTriangle } from "lucide-react"
+import NexusButton from "./ui/NexusButton"
 
 interface Props {
   children: ReactNode
@@ -27,23 +29,18 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen items-center justify-center bg-nexus-bg">
-          <div className="max-w-md rounded-2xl bg-nexus-card border border-nexus-border p-8 text-center shadow-2xl shadow-black/30">
-            <div className="mx-auto mb-4 w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
-                <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-              </svg>
+        <div className="flex h-screen items-center justify-center bg-nexus-bg p-4">
+          <div className="max-w-sm w-full rounded-2xl bg-nexus-card/80 border border-nexus-border/50 p-8 text-center shadow-xl backdrop-blur-xl">
+            <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-red-500/10 flex items-center justify-center">
+              <AlertTriangle className="w-7 h-7 text-red-400" />
             </div>
-            <h2 className="mb-2 text-xl font-bold text-nexus-text">Something went wrong</h2>
+            <h2 className="mb-2 text-lg font-bold text-nexus-text">Something went wrong</h2>
             <p className="mb-6 text-sm text-nexus-muted">
               {this.state.error?.message || "An unexpected error occurred"}
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="rounded-xl bg-nexus-primary px-6 py-2.5 text-sm font-medium text-white hover:brightness-110 transition-all"
-            >
+            <NexusButton onClick={() => window.location.reload()}>
               Reload Page
-            </button>
+            </NexusButton>
           </div>
         </div>
       )

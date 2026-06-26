@@ -8,7 +8,7 @@ export default function AuthCallback() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    document.title = "Authenticating… — Nexus Chat"
+    document.title = "Authenticating... — Nexus Chat"
     const token = searchParams.get("token")
     if (token) {
       login(token)
@@ -20,9 +20,11 @@ export default function AuthCallback() {
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-nexus-bg text-nexus-text">
-      <div className="flex flex-col items-center gap-4 animate-fadeIn">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-nexus-primary border-t-transparent" />
-        <p className="text-nexus-muted text-sm">Authenticating…</p>
+      <div className="flex flex-col items-center gap-4">
+        <div className="relative">
+          <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-nexus-primary/20 border-t-nexus-primary" />
+        </div>
+        <p className="text-nexus-muted text-sm animate-pulse">Authenticating...</p>
       </div>
     </div>
   )

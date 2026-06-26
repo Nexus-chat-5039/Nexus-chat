@@ -1,0 +1,115 @@
+version: '3.9'
+
+services:
+  # ── Infrastructure ──
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: nexus
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: rootpassword
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+
+  # ── Services ──
+  nexus-api:
+    build:
+      context: ./services/nexus-api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file: .env.local
+    depends_on:
+      - redis
+      - postgres
+
+  nexus-socket:
+    build:
+      context: ./services/nexus-socket
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file: .env.local
+    depends_on:
+      - redis
+      - postgres
+
+  nexus-rag:
+    build:
+      context: ./services/nexus-rag
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+      - "8000:8000"
+    env_file: .env.local
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    depends_on:
+      - qdrant
+    volumes:
+      - ./services/nexus-rag/app:/app/app
+
+  nexus-ai-gateway:
+    build:
+      context: ./services/nexus-ai-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    env_file: .env.local
+
+  nexus-ai-worker:
+    build:
+      context: ./services/nexus-ai-worker
+      dockerfile: Dockerfile
+    env_file: .env.local
+    depends_on:
+      - redis
+      - postgres
+      - pubsub-emulator
+      - nexus-rag
+      - nexus-ai-gateway
+
+  nexus-billing:
+    build:
+      context: ./services/nexus-billing
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    env_file: .env.local
+    depends_on:
+      - redis
+      - postgres
+
+  # ── Frontend ──
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    depends_on:
+      - nexus-api
+      - nexus-socket
+
+volumes:
+  qdrant_storage:
