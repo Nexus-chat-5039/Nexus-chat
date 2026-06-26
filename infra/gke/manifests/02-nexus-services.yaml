@@ -1,0 +1,130 @@
+# -----------------------------------------------------
+# nexus-api (Go)
+# -----------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-api
+  namespace: nexus-services
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-api
+  template:
+    metadata:
+      labels:
+        app: nexus-api
+    spec:
+      containers:
+      - name: nexus-api
+        image: gcr.io/nexus-prod-12345/nexus-api:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "128Mi"
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-api
+  namespace: nexus-services
+spec:
+  selector:
+    app: nexus-api
+  ports:
+  - port: 80
+    targetPort: 8080
+
+# -----------------------------------------------------
+# nexus-socket (Node.js)
+# -----------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-socket
+  namespace: nexus-services
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-socket
+  template:
+    metadata:
+      labels:
+        app: nexus-socket
+    spec:
+      containers:
+      - name: nexus-socket
+        image: gcr.io/nexus-prod-12345/nexus-socket:latest
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
+          limits:
+            cpu: "2000m"
+            memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-socket
+  namespace: nexus-services
+spec:
+  selector:
+    app: nexus-socket
+  ports:
+  - port: 80
+    targetPort: 3000
+
+# -----------------------------------------------------
+# nexus-billing (Go)
+# -----------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-billing
+  namespace: nexus-services
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-billing
+  template:
+    metadata:
+      labels:
+        app: nexus-billing
+    spec:
+      containers:
+      - name: nexus-billing
+        image: gcr.io/nexus-prod-12345/nexus-billing:latest
+        ports:
+        - containerPort: 8082
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "128Mi"
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-billing
+  namespace: nexus-services
+spec:
+  selector:
+    app: nexus-billing
+  ports:
+  - port: 80
+    targetPort: 8082

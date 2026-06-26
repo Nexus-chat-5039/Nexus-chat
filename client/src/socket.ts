@@ -1,9 +1,9 @@
 import { io, Socket } from "socket.io-client"
 
 
-import { API_URL } from "./api/config"
+import { SOCKET_URL } from "./api/config"
 
-export const socket = io(API_URL, {
+export const socket = io(SOCKET_URL, {
   autoConnect: false,
   transports: ["websocket", "polling"],
   reconnection: true,

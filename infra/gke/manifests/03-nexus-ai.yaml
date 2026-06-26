@@ -1,0 +1,121 @@
+# -----------------------------------------------------
+# nexus-rag (Python)
+# -----------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-rag
+  namespace: nexus-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-rag
+  template:
+    metadata:
+      labels:
+        app: nexus-rag
+    spec:
+      containers:
+      - name: nexus-rag
+        image: gcr.io/nexus-prod-12345/nexus-rag:latest
+        ports:
+        - containerPort: 50051
+        - containerPort: 8000
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "2Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-rag
+  namespace: nexus-ai
+spec:
+  selector:
+    app: nexus-rag
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+  - name: http
+    port: 8000
+    targetPort: 8000
+
+# -----------------------------------------------------
+# nexus-ai-gateway (Go)
+# -----------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-ai-gateway
+  namespace: nexus-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-ai-gateway
+  template:
+    metadata:
+      labels:
+        app: nexus-ai-gateway
+    spec:
+      containers:
+      - name: nexus-ai-gateway
+        image: gcr.io/nexus-prod-12345/nexus-ai-gateway:latest
+        ports:
+        - containerPort: 8081
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "128Mi"
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-ai-gateway
+  namespace: nexus-ai
+spec:
+  selector:
+    app: nexus-ai-gateway
+  ports:
+  - port: 80
+    targetPort: 8081
+
+# -----------------------------------------------------
+# nexus-ai-worker (Go Pub/Sub Consumer)
+# -----------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-ai-worker
+  namespace: nexus-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-ai-worker
+  template:
+    metadata:
+      labels:
+        app: nexus-ai-worker
+    spec:
+      containers:
+      - name: nexus-ai-worker
+        image: gcr.io/nexus-prod-12345/nexus-ai-worker:latest
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
