@@ -46,25 +46,36 @@ export default function Modal({ isOpen, onClose, title, children }: Props) {
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
     >
       <div
         ref={contentRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-2xl border border-nexus-border bg-nexus-card p-6 shadow-2xl shadow-black/40 relative animate-scaleIn mx-4"
+        className="w-full max-w-sm rounded-2xl border border-nexus-border/50 bg-nexus-card/95 backdrop-blur-xl p-6 shadow-2xl relative mx-4 animate-[scaleIn_0.2s_ease-out]"
       >
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 p-1 text-nexus-muted hover:text-nexus-text hover:bg-nexus-bg rounded-lg transition-all"
+          className="absolute right-4 top-4 p-1.5 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-lg transition-all"
           aria-label="Close"
         >
-          <X size={18} />
+          <X size={16} />
         </button>
-        <h2 className="mb-5 text-xl font-semibold text-nexus-text">{title}</h2>
+        <h2 className="mb-5 text-lg font-semibold">{title}</h2>
         {children}
       </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.96); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
     </div>,
     document.body
   )

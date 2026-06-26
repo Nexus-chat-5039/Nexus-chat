@@ -1,12 +1,10 @@
-import { memo, useState, useMemo, useCallback } from "react"
-import logo from "../assets/logo.svg"
+import { memo, useState, useMemo, useCallback, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { getImageUrl } from "../api/config"
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { motion, useAnimation, type PanInfo } from "framer-motion"
-import { Reply } from "lucide-react"
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { getImageUrl } from "../api/config"
+import { Reply, Pencil, Trash2, Check, X } from "lucide-react"
 import type { Message } from "../types"
 
 const COLORS = [
@@ -25,43 +23,23 @@ function getSenderColor(sender?: string) {
 }
 
 const CodeBlockHeader = memo(function CodeBlockHeader({ language, code }: { language: string; code: string }) {
-  const [isCopied, setIsCopied] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
-    if (!code) return
     navigator.clipboard.writeText(code)
-    setIsCopied(true)
-    setTimeout(() => setIsCopied(false), 2000)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }, [code])
 
   return (
-    <div className="bg-[#1e1e1e] px-4 py-2 text-xs text-gray-400 border-b border-white/5 flex justify-between items-center select-none rounded-t-lg">
+    <div className="bg-[#1a1a2e] px-4 py-1.5 text-[11px] text-nexus-muted/60 border-b border-white/[0.04] flex justify-between items-center select-none rounded-t-lg">
       <span className="lowercase font-mono">{language}</span>
       <button
         onClick={handleCopy}
-        className="hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-white/5"
-        aria-label="Copy code to clipboard"
+        className="hover:text-nexus-text transition-colors px-2 py-0.5 rounded hover:bg-white/5"
       >
-        {isCopied ? (
-          <span className="text-emerald-400 font-medium">✓ Copied</span>
-        ) : (
-          <span>Copy</span>
-        )}
+        {copied ? <span className="text-emerald-400">Copied</span> : "Copy"}
       </button>
-    </div>
-  )
-})
-
-const Avatar = memo(function Avatar({ name, image }: { name?: string; image?: string }) {
-  return (
-    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-nexus-surface overflow-hidden flex items-center justify-center shadow-sm border border-white/5 mt-1 select-none">
-      {image ? (
-        <img src={image} alt={name} className="w-full h-full object-cover" loading="lazy" />
-      ) : (
-        <div className="text-xs text-gray-300 font-bold uppercase">
-          {(name || "?")[0]}
-        </div>
-      )}
     </div>
   )
 })
@@ -78,7 +56,6 @@ type Props = {
 const MessageBubble = memo(function MessageBubble({
   message,
   currentUserId,
-  currentUserImage,
   onReply,
   onDelete,
   onEdit,
@@ -87,12 +64,28 @@ const MessageBubble = memo(function MessageBubble({
   const isOtherUser = message.role === "user" && !isMe
   const isAI = message.role === "assistant"
 
-  const [showDeleteMenu, setShowDeleteMenu] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [showDeleteOptions, setShowDeleteOptions] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
+  const [entranceDone, setEntranceDone] = useState(false)
+  const bubbleRef = useRef<HTMLDivElement>(null)
 
   const senderColor = useMemo(() => getSenderColor(message.sender), [message.sender])
+
+  // Entrance animation
+  useEffect(() => {
+    if (entranceDone || !bubbleRef.current) return
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (prefersReduced) {
+      setEntranceDone(true)
+      return
+    }
+    // Use CSS animation for entrance
+    bubbleRef.current.style.animation = "msgEnter 0.25s ease-out forwards"
+    const timer = setTimeout(() => setEntranceDone(true), 250)
+    return () => clearTimeout(timer)
+  }, [])
 
   const handleSaveEdit = useCallback(() => {
     if (onEdit && editContent.trim() !== message.content) {
@@ -101,24 +94,12 @@ const MessageBubble = memo(function MessageBubble({
     setIsEditing(false)
   }, [onEdit, editContent, message.content, message.id])
 
-  const controls = useAnimation()
-
-  const handleDragEnd = useCallback(
-    async (_: unknown, info: PanInfo) => {
-      if (info.offset.x > 50 && onReply) {
-        onReply(message)
-      }
-      await controls.start({ x: 0 })
-    },
-    [controls, onReply, message]
-  )
-
   if (message.is_deleted) {
     return (
-      <div className={`flex w-full ${isMe ? "justify-end" : "justify-start"} mb-3 px-4`}>
-        <div className="rounded-2xl px-4 py-2.5 bg-nexus-card/50 border border-nexus-border/30 text-nexus-muted text-sm italic backdrop-blur-sm">
-          <span className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+      <div className={`flex w-full ${isMe ? "justify-end" : "justify-start"} mb-2 px-1`}>
+        <div className="rounded-2xl px-4 py-2 bg-nexus-card/40 border border-nexus-border/20 text-nexus-muted/50 text-xs italic">
+          <span className="flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
             This message was deleted
           </span>
         </div>
@@ -126,94 +107,102 @@ const MessageBubble = memo(function MessageBubble({
     )
   }
 
-  const bubbleClass = isMe
-    ? "bg-gradient-to-br from-[#006e59] to-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-sm border border-white/5 shadow-md shadow-black/20"
-    : isOtherUser
-    ? "bg-gradient-to-br from-[#2a3942] to-[#202c33] text-[#e9edef] rounded-2xl rounded-tl-sm border border-white/5 shadow-md shadow-black/20"
-    : "bg-gradient-to-br from-[#132c28] to-[#0e1f1d] text-[#e9edef] rounded-2xl rounded-tl-sm border border-nexus-primary/20 shadow-lg shadow-black/30"
-
   return (
-    <motion.div
-      className={`group relative flex w-full mb-1.5 ${isMe ? "items-end" : "items-start"}`}
+    <div
+      ref={bubbleRef}
+      className={`group relative flex w-full mb-1 px-1 ${isMe ? "justify-end" : "justify-start"}`}
       id={"msg_" + message.id}
+      style={{ opacity: entranceDone ? 1 : 0, transform: entranceDone ? "none" : "translateY(10px)" }}
     >
-      <motion.div
-        drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0, right: 0.5 }}
-        onDragEnd={handleDragEnd}
-        animate={controls}
-        className={`flex w-full ${isMe ? "justify-end" : "justify-start"} gap-2 px-2`}
-      >
+      <div className={`flex max-w-[88%] md:max-w-[75%] gap-2 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+        {/* Avatar */}
         {!isMe && (
-          <Avatar
-            name={isAI ? "AI" : message.sender_name}
-            image={isAI ? logo : getImageUrl(message.sender_image)}
-          />
+          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-nexus-surface overflow-hidden flex items-center justify-center border border-white/[0.04] mt-0.5 self-end">
+            {message.sender_image ? (
+              <img src={getImageUrl(message.sender_image)} alt="" className="w-full h-full object-cover" loading="lazy" />
+            ) : (
+              <span className="text-[10px] text-nexus-muted/70 font-bold uppercase">
+                {(message.sender_name || message.sender || "?")[0]}
+              </span>
+            )}
+          </div>
         )}
 
-        <div className={`${bubbleClass} px-3 py-2 shadow-sm max-w-[92%] md:max-w-[85%] relative group/bubble`}>
-          {/* Context Menu Button */}
-          <div className={`absolute top-1 ${isMe ? "left-[-28px]" : "right-[-28px]"} flex md:opacity-0 md:group-hover/bubble:opacity-100 transition-opacity`}>
+        {/* Bubble */}
+        <div
+          className={`
+            relative px-3.5 py-2 rounded-2xl shadow-sm
+            ${isMe
+              ? "bg-nexus-primary/90 text-white rounded-br-sm"
+              : isAI
+              ? "bg-gradient-to-br from-nexus-surface to-nexus-card/80 text-nexus-text rounded-bl-sm border border-nexus-primary/10"
+              : "bg-nexus-surface text-nexus-text rounded-bl-sm border border-white/[0.04]"
+            }
+          `}
+        >
+          {/* Context menu */}
+          <div className={`
+            absolute top-0.5 ${isMe ? "left-0 -translate-x-full pr-1" : "right-0 translate-x-full pl-1"}
+            flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150
+          `}>
             <button
-              onClick={() => { setShowDeleteMenu(!showDeleteMenu); setShowDeleteOptions(false) }}
-              className="p-1.5 text-gray-400 hover:text-white bg-nexus-card/80 backdrop-blur-sm rounded-full border border-nexus-border/30 shadow-lg transition-all hover:scale-110"
+              onClick={() => { setShowMenu(!showMenu); setShowDeleteOptions(false) }}
+              className="p-1 text-nexus-muted/60 hover:text-nexus-text hover:bg-nexus-surface rounded-md transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+              </svg>
             </button>
 
-            {showDeleteMenu && (
-              <div
-                className="absolute top-9 z-20 w-36 rounded-xl border border-nexus-border bg-nexus-card shadow-2xl shadow-black/40 py-1 overflow-hidden animate-fadeIn"
+            {showMenu && (
+              <div className="absolute top-7 z-20 w-32 rounded-xl border border-nexus-border/50 bg-nexus-card/95 backdrop-blur-xl shadow-xl py-1 overflow-hidden"
                 style={{ [isMe ? "right" : "left"]: 0 }}
               >
                 {!showDeleteOptions ? (
                   <>
                     <button
-                      onClick={() => { onReply?.(message); setShowDeleteMenu(false) }}
-                      className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors flex items-center gap-2"
+                      onClick={() => { onReply?.(message); setShowMenu(false) }}
+                      className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
                     >
-                      <Reply size={14} /> Reply
+                      <Reply size={12} /> Reply
                     </button>
                     {isMe && (
                       <button
-                        onClick={() => { setIsEditing(true); setShowDeleteMenu(false) }}
-                        className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors flex items-center gap-2"
+                        onClick={() => { setIsEditing(true); setShowMenu(false) }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
-                        Edit
+                        <Pencil size={12} /> Edit
                       </button>
                     )}
-                    <div className="h-px bg-nexus-border/50 my-0.5" />
+                    <div className="h-px bg-nexus-border/30 my-0.5" />
                     <button
                       onClick={() => setShowDeleteOptions(true)}
-                      className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2"
+                      className="w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors flex items-center gap-2"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                      Delete
+                      <Trash2 size={12} /> Delete
                     </button>
                   </>
                 ) : (
                   <>
-                    <div className="px-3 py-1.5 text-[10px] text-nexus-muted uppercase font-bold tracking-wider">Delete?</div>
+                    <div className="px-3 py-1 text-[9px] text-nexus-muted uppercase font-bold tracking-wider">Delete?</div>
                     <button
-                      onClick={() => { onDelete(message.id, "me"); setShowDeleteMenu(false); setShowDeleteOptions(false) }}
-                      className="w-full text-left px-3 py-2 text-sm text-nexus-text hover:bg-white/5 transition-colors"
+                      onClick={() => { onDelete(message.id, "me"); setShowMenu(false); setShowDeleteOptions(false) }}
+                      className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors"
                     >
                       For Me
                     </button>
                     {isMe && (
                       <button
-                        onClick={() => { onDelete(message.id, "everyone"); setShowDeleteMenu(false); setShowDeleteOptions(false) }}
-                        className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                        onClick={() => { onDelete(message.id, "everyone"); setShowMenu(false); setShowDeleteOptions(false) }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors"
                       >
                         For Everyone
                       </button>
                     )}
-                    <div className="h-px bg-nexus-border/50 my-0.5" />
+                    <div className="h-px bg-nexus-border/30 my-0.5" />
                     <button
                       onClick={() => setShowDeleteOptions(false)}
-                      className="w-full text-left px-3 py-1.5 text-xs text-nexus-muted hover:text-white transition-colors"
+                      className="w-full text-left px-3 py-1 text-[10px] text-nexus-muted hover:text-nexus-text transition-colors"
                     >
                       Cancel
                     </button>
@@ -223,9 +212,9 @@ const MessageBubble = memo(function MessageBubble({
             )}
           </div>
 
-          {/* Sender name for other users */}
+          {/* Sender name */}
           {isOtherUser && message.sender_name && (
-            <p className="text-xs font-semibold mb-0.5" style={{ color: senderColor }}>
+            <p className="text-[11px] font-semibold mb-0.5" style={{ color: senderColor }}>
               {message.sender_name}
             </p>
           )}
@@ -233,16 +222,16 @@ const MessageBubble = memo(function MessageBubble({
           {/* Reply reference */}
           {message.replyTo && (
             <div
-              className="mb-1.5 pl-2 border-l-2 border-nexus-primary/50 bg-black/10 rounded-r-md py-1 pr-2 cursor-pointer"
+              className="mb-1.5 pl-2 border-l-2 border-nexus-primary/40 bg-black/10 rounded-r-md py-1 pr-2 cursor-pointer hover:bg-black/15 transition-colors"
               onClick={() => document.getElementById("msg_" + message.replyTo?.id)?.scrollIntoView({ behavior: "smooth", block: "center" })}
             >
-              <p className="text-[11px] font-semibold text-nexus-primary">{message.replyTo.sender}</p>
-              <p className="text-xs text-nexus-muted truncate">{message.replyTo.content}</p>
+              <p className="text-[10px] font-semibold text-nexus-primary/80">{message.replyTo.sender}</p>
+              <p className="text-[11px] text-nexus-muted truncate">{message.replyTo.content}</p>
             </div>
           )}
 
           {/* Content */}
-          <div className="whitespace-pre-wrap text-[15px] leading-relaxed relative min-w-[60px]">
+          <div className="text-[14px] leading-relaxed whitespace-pre-wrap">
             {isEditing ? (
               <div className="flex flex-col gap-2 min-w-[200px]">
                 <textarea
@@ -252,12 +241,16 @@ const MessageBubble = memo(function MessageBubble({
                   autoFocus
                 />
                 <div className="flex justify-end gap-2">
-                  <button onClick={() => setIsEditing(false)} className="text-xs text-nexus-muted hover:text-white px-2 py-1 rounded transition-colors">Cancel</button>
-                  <button onClick={handleSaveEdit} className="text-xs bg-emerald-600 text-white px-3 py-1 rounded-md font-medium hover:bg-emerald-500 transition-colors">Save</button>
+                  <button onClick={() => setIsEditing(false)} className="text-[11px] text-nexus-muted hover:text-white px-2 py-1 rounded transition-colors flex items-center gap-1">
+                    <X size={10} /> Cancel
+                  </button>
+                  <button onClick={handleSaveEdit} className="text-[11px] bg-emerald-600/80 text-white px-3 py-1 rounded-md font-medium hover:bg-emerald-500 transition-colors flex items-center gap-1">
+                    <Check size={10} /> Save
+                  </button>
                 </div>
               </div>
             ) : isAI ? (
-              <div className="prose prose-invert prose-sm max-w-none [&_pre]:m-0 [&_pre]:bg-transparent [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:mb-2 [&_ol]:mb-2 [&_li]:mb-0.5 [&_code]:text-emerald-300 [&_code]:bg-white/5 [&_code]:px-1 [&_code]:rounded [&_code]:text-[13px]">
+              <div className="prose prose-invert prose-sm max-w-none [&_pre]:m-0 [&_pre]:bg-transparent [&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_ul]:mb-1.5 [&_ol]:mb-1.5 [&_li]:mb-0.5 [&_code]:text-emerald-300 [&_code]:bg-white/5 [&_code]:px-1 [&_code]:rounded [&_code]:text-[13px]">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -265,13 +258,13 @@ const MessageBubble = memo(function MessageBubble({
                       const match = /language-(\w+)/.exec(className || "")
                       const codeString = String(children).replace(/\n$/, "")
                       return match ? (
-                        <div className="rounded-lg overflow-hidden my-2 border border-white/5">
+                        <div className="rounded-lg overflow-hidden my-2 border border-white/[0.06]">
                           <CodeBlockHeader language={match[1]} code={codeString} />
                           <SyntaxHighlighter
                             style={vscDarkPlus}
                             language={match[1]}
                             PreTag="div"
-                            customStyle={{ margin: 0, borderRadius: 0, fontSize: "13px" }}
+                            customStyle={{ margin: 0, borderRadius: 0, fontSize: "12px", padding: "12px 16px" }}
                           >
                             {codeString}
                           </SyntaxHighlighter>
@@ -294,18 +287,18 @@ const MessageBubble = memo(function MessageBubble({
 
           {/* Edited indicator */}
           {message.is_edited && (
-            <span className="text-[10px] text-nexus-muted/60 italic mt-0.5 block">edited</span>
+            <span className="text-[9px] text-nexus-muted/40 italic mt-0.5 block">edited</span>
           )}
         </div>
+      </div>
 
-        {isMe && (
-          <Avatar
-            name="Me"
-            image={getImageUrl(message.sender_image || currentUserImage)}
-          />
-        )}
-      </motion.div>
-    </motion.div>
+      <style>{`
+        @keyframes msgEnter {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+    </div>
   )
 })
 

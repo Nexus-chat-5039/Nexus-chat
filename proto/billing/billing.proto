@@ -1,0 +1,18 @@
+syntax = "proto3";
+package nexus.billing;
+
+option go_package = "pkg/pb/billing;billing";
+
+// Stub for billing service
+service BillingService {
+  rpc ReportUsage (ReportRequest) returns (ReportResponse);
+}
+
+message ReportRequest {
+  string tenant_id = 1;
+  int32 tokens = 2;
+}
+
+message ReportResponse {
+  bool success = 1;
+}

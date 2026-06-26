@@ -3,8 +3,11 @@ import { useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useWorkspace } from "../context/WorkspaceContext"
 import { updateProfile, getProfile, uploadAvatar } from "../api/auth"
-import { ArrowLeft, Camera, User } from "lucide-react"
 import { getImageUrl } from "../api/config"
+import { ArrowLeft, Camera, User, Check } from "lucide-react"
+import NexusButton from "../components/ui/NexusButton"
+import NexusInput from "../components/ui/NexusInput"
+import GlassCard from "../components/ui/GlassCard"
 
 export default function Profile() {
   const { token, login } = useAuth()
@@ -45,6 +48,14 @@ export default function Profile() {
     fetchMe()
   }, [currentUsername, userEmail, token])
 
+  // Auto-clear success
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => setSuccess(""), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [success])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
@@ -55,7 +66,7 @@ export default function Profile() {
       if (!token) throw new Error("Not authenticated")
       const data = await updateProfile(username, email, fullName, bio)
       login(data.access_token)
-      setSuccess("Profile updated successfully")
+      setSuccess("Profile updated")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update profile")
     } finally {
@@ -73,7 +84,6 @@ export default function Profile() {
       const data = await uploadAvatar(file)
       setProfileImage(`${data.profile_image}?t=${Date.now()}`)
     } catch (err) {
-      console.error(err)
       setError("Failed to upload image")
     } finally {
       setImageLoading(false)
@@ -81,98 +91,94 @@ export default function Profile() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-nexus-bg text-nexus-text p-4">
-      <div className="w-full max-w-md p-8 bg-nexus-card rounded-2xl border border-nexus-border shadow-2xl shadow-black/30 animate-fadeIn">
-        <div className="flex items-center mb-6">
-          <button
-            onClick={() => navigate("/chat")}
-            className="mr-4 p-2 rounded-xl hover:bg-nexus-bg transition-all text-nexus-muted hover:text-nexus-text"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="text-2xl font-bold">Profile Settings</h1>
+    <div className="min-h-screen bg-nexus-bg text-nexus-text flex flex-col items-center justify-center p-4">
+      {/* Back button */}
+      <div className="w-full max-w-md mb-4">
+        <button
+          onClick={() => navigate("/chat")}
+          className="flex items-center gap-2 text-sm text-nexus-muted hover:text-nexus-text transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Chat
+        </button>
+      </div>
+
+      <GlassCard className="w-full max-w-md p-6 md:p-8">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <h1 className="text-xl font-bold">Profile Settings</h1>
         </div>
 
-        <div className="flex justify-center mb-8">
+        {/* Avatar */}
+        <div className="flex justify-center mb-6">
           <div className="relative group cursor-pointer">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-nexus-bg ring-2 ring-nexus-border bg-nexus-input flex items-center justify-center">
+            <div className="w-24 h-24 rounded-full overflow-hidden border-3 border-nexus-bg ring-2 ring-nexus-border/40 bg-nexus-input flex items-center justify-center">
               {profileImage ? (
                 <img src={getImageUrl(profileImage)} alt="Profile" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-10 h-10 text-nexus-muted" />
               )}
               {imageLoading && (
-                <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white" />
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
                 </div>
               )}
             </div>
             <label className="absolute bottom-0 right-0 bg-nexus-primary p-2 rounded-full cursor-pointer hover:brightness-110 transition-all shadow-lg group-hover:scale-110">
-              <Camera className="w-4 h-4 text-white" />
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*"
-                onChange={handleImageUpload}
-                disabled={imageLoading}
-              />
+              <Camera className="w-3.5 h-3.5 text-white" />
+              <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={imageLoading} />
             </label>
           </div>
         </div>
 
+        {error && (
+          <div className="mb-4 text-sm text-red-400 bg-red-500/5 border border-red-500/10 rounded-xl px-3 py-2">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 text-sm text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 rounded-xl px-3 py-2 flex items-center gap-2">
+            <Check className="w-3.5 h-3.5" /> {success}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
+          <NexusInput
+            label="Full Name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Your full name"
+          />
+          <NexusInput
+            label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="username"
+          />
+          <NexusInput
+            label="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+          />
           <div>
-            <label className="block text-sm font-medium text-nexus-muted mb-1.5">Full Name</label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="w-full rounded-xl bg-nexus-input border border-nexus-border px-4 py-2.5 text-nexus-text focus:border-nexus-primary/50 focus:ring-1 focus:ring-nexus-primary/20 outline-none transition-all text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-nexus-muted mb-1.5">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-xl bg-nexus-input border border-nexus-border px-4 py-2.5 text-nexus-text focus:border-nexus-primary/50 focus:ring-1 focus:ring-nexus-primary/20 outline-none transition-all text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-nexus-muted mb-1.5">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl bg-nexus-input border border-nexus-border px-4 py-2.5 text-nexus-text focus:border-nexus-primary/50 focus:ring-1 focus:ring-nexus-primary/20 outline-none transition-all text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-nexus-muted mb-1.5">Bio</label>
+            <label className="block text-[11px] font-medium uppercase tracking-wider text-nexus-muted mb-1.5">
+              Bio
+            </label>
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              className="w-full rounded-xl bg-nexus-input border border-nexus-border px-4 py-2.5 text-nexus-text focus:border-nexus-primary/50 focus:ring-1 focus:ring-nexus-primary/20 outline-none h-24 resize-none transition-all text-sm"
+              className="w-full rounded-xl bg-nexus-input border border-nexus-border px-4 py-2.5 text-nexus-text text-sm placeholder:text-nexus-muted/50 outline-none focus:border-nexus-primary/50 focus:ring-[3px] focus:ring-nexus-primary/10 transition-all h-20 resize-none"
               placeholder="Tell us about yourself..."
             />
           </div>
 
-          {error && <p className="text-red-400 text-sm bg-red-500/5 border border-red-500/10 rounded-xl px-3 py-2">{error}</p>}
-          {success && <p className="text-emerald-400 text-sm bg-emerald-500/5 border border-emerald-500/10 rounded-xl px-3 py-2">{success}</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-nexus-primary hover:brightness-110 text-white font-semibold py-2.5 rounded-xl transition-all disabled:opacity-50 active:scale-[0.98]"
-          >
-            {loading ? "Saving..." : "Save Changes"}
-          </button>
+          <NexusButton type="submit" fullWidth disabled={loading} loading={loading}>
+            Save Changes
+          </NexusButton>
         </form>
-      </div>
+      </GlassCard>
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import Modal from "./Modal"
+import NexusAvatar from "./ui/NexusAvatar"
 import type { Group } from "../types"
 
 type Props = {
@@ -18,49 +19,52 @@ export default function GroupDetailsModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Group Details">
-      <div className="flex flex-col gap-6">
-        <div className="bg-nexus-surface p-4 rounded-xl flex items-center justify-between">
+      <div className="flex flex-col gap-5">
+        {/* Group header */}
+        <div className="bg-nexus-surface/60 p-4 rounded-xl flex items-center justify-between border border-nexus-border/30">
           <div>
-            <h3 className="text-lg font-bold text-nexus-text">{group.name}</h3>
-            <p className="text-[11px] text-nexus-muted mt-1 font-mono">ID: {group.id}</p>
+            <h3 className="text-base font-bold">{group.name}</h3>
+            <p className="text-[10px] text-nexus-muted mt-0.5 font-mono">ID: {group.id}</p>
           </div>
           {!isPersonal && !isOwner && (
             <button
               onClick={() => { onLeave(group.id); onClose() }}
-              className="px-3 py-1.5 bg-red-600/10 text-red-400 hover:bg-red-600/20 rounded-xl text-sm transition-all border border-red-600/20"
+              className="px-3 py-1.5 bg-red-500/10 text-red-400/80 hover:bg-red-500/20 rounded-lg text-xs transition-all border border-red-500/20 font-medium"
             >
               Exit Group
             </button>
           )}
           {isOwner && !isPersonal && (
-            <span className="text-xs text-nexus-muted italic bg-nexus-card px-2 py-1 rounded-lg">Owner</span>
+            <span className="text-[10px] text-nexus-muted italic bg-nexus-card px-2 py-1 rounded-md">Owner</span>
           )}
         </div>
 
+        {/* Members */}
         <div>
-          <h4 className="text-xs font-semibold text-nexus-primary uppercase tracking-wider mb-3">
+          <h4 className="text-[10px] font-semibold text-nexus-primary uppercase tracking-wider mb-2.5">
             Members ({group.members.length})
           </h4>
-          <div className="max-h-60 overflow-y-auto space-y-1.5 scrollbar-thin">
+          <div className="max-h-52 overflow-y-auto space-y-1 scrollbar-thin">
             {group.members.map((member) => (
-              <div key={member} className="flex items-center justify-between p-2.5 rounded-xl bg-nexus-input hover:bg-nexus-hover transition-all group/member">
+              <div
+                key={member}
+                className="flex items-center justify-between p-2.5 rounded-xl bg-nexus-input/50 hover:bg-nexus-hover/50 transition-all group/member"
+              >
                 <div className="flex items-center gap-2.5 overflow-hidden">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white uppercase shrink-0">
-                    {member.substring(0, 2)}
-                  </div>
+                  <NexusAvatar name={member} size="sm" />
                   <div className="flex flex-col min-w-0">
-                    <span className={`text-sm truncate ${member === currentUserEmail ? "font-bold text-white" : "text-gray-300"}`}>
+                    <span className={`text-sm truncate ${member === currentUserEmail ? "font-semibold text-nexus-text" : "text-nexus-text/70"}`}>
                       {member === currentUserEmail ? `${member} (You)` : member}
                     </span>
                     {group.user_id === member && (
-                      <span className="text-[10px] text-nexus-primary">Owner</span>
+                      <span className="text-[9px] text-nexus-primary/70">Owner</span>
                     )}
                   </div>
                 </div>
                 {isOwner && member !== currentUserEmail && (
                   <button
                     onClick={() => onRemoveMember(group.id, member)}
-                    className="opacity-0 group-hover/member:opacity-100 text-red-400 hover:text-red-500 text-xs px-2 py-1 rounded-lg hover:bg-red-900/20 transition-all"
+                    className="opacity-0 group-hover/member:opacity-100 text-red-400/60 hover:text-red-400 text-[10px] px-2 py-1 rounded-md hover:bg-red-500/10 transition-all"
                   >
                     Remove
                   </button>
