@@ -33,8 +33,8 @@ services:
   # ── Services ──
   nexus-api:
     build:
-      context: ./services/nexus-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nexus-api/Dockerfile
     ports:
       - "8080:8080"
     env_file: .env.local
@@ -44,8 +44,8 @@ services:
 
   nexus-socket:
     build:
-      context: ./services/nexus-socket
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nexus-socket/Dockerfile
     ports:
       - "3000:3000"
     env_file: .env.local
@@ -55,8 +55,8 @@ services:
 
   nexus-rag:
     build:
-      context: ./services/nexus-rag
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nexus-rag/Dockerfile
     ports:
       - "50051:50051"
       - "8000:8000"
@@ -71,16 +71,16 @@ services:
 
   nexus-ai-gateway:
     build:
-      context: ./services/nexus-ai-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nexus-ai-gateway/Dockerfile
     ports:
       - "8081:8081"
     env_file: .env.local
 
   nexus-ai-worker:
     build:
-      context: ./services/nexus-ai-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nexus-ai-worker/Dockerfile
     env_file: .env.local
     depends_on:
       - redis
@@ -91,8 +91,8 @@ services:
 
   nexus-billing:
     build:
-      context: ./services/nexus-billing
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nexus-billing/Dockerfile
     ports:
       - "8082:8082"
     env_file: .env.local
@@ -100,16 +100,7 @@ services:
       - redis
       - postgres
 
-  # ── Frontend ──
-  client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    ports:
-      - "5173:5173"
-    depends_on:
-      - nexus-api
-      - nexus-socket
+
 
 volumes:
   qdrant_storage:
