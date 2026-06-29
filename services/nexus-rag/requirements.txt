@@ -3,7 +3,7 @@ grpcio==1.62.1
 grpcio-tools==1.62.1
 
 # Vector store
-qdrant-client==1.9.1
+qdrant-client==1.12.1
 
 # ML models (BGE-M3 + BGE-Reranker)
 FlagEmbedding==1.2.9

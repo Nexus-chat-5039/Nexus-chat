@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY proto/ /app/proto/
 RUN mkdir -p /app/proto_out && \
     python -m grpc_tools.protoc \
-        -I/app/proto \
+        -I/app/proto/rag \
         --python_out=/app/proto_out \
         --grpc_python_out=/app/proto_out \
         /app/proto/rag/rag.proto && \

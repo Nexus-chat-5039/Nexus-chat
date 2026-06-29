@@ -15,6 +15,11 @@ var firebaseAuth *auth.Client
 
 // InitFirebase initializes the Firebase Admin SDK.
 func InitFirebase(ctx context.Context, projectID string) {
+	if projectID == "" {
+		log.Println("[auth] FIREBASE_PROJECT_ID not set — running in dev mode (auth disabled)")
+		return
+	}
+
 	conf := &firebase.Config{ProjectID: projectID}
 	app, err := firebase.NewApp(ctx, conf)
 	if err != nil {

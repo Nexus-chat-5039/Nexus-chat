@@ -34,7 +34,7 @@ function decodeToken(token: string | null): { email: string; username: string } 
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(() =>
-    "fake-token-bypass" || localStorage.getItem("nexus_token")
+    localStorage.getItem("nexus_token")
   )
 
   const decoded = useMemo(() => decodeToken(token), [token])

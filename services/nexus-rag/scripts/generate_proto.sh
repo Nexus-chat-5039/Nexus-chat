@@ -21,7 +21,7 @@ mkdir -p "$OUT_DIR"
 
 # Generate stubs
 python -m grpc_tools.protoc \
-    -I"$PROTO_DIR" \
+    -I"$PROTO_DIR/rag" \
     --python_out="$OUT_DIR" \
     --grpc_python_out="$OUT_DIR" \
     "$PROTO_DIR/rag/rag.proto"

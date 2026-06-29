@@ -13,9 +13,14 @@ let firebaseInitialized = false;
 function initFirebase() {
   if (firebaseInitialized) return;
 
+  if (!config.FIREBASE_PROJECT_ID) {
+    console.warn('[auth] FIREBASE_PROJECT_ID not set — running in dev mode (auth disabled)');
+    return;
+  }
+
   try {
     admin.initializeApp({
-      projectId: config.FIREBASE_PROJECT_ID || undefined,
+      projectId: config.FIREBASE_PROJECT_ID,
     });
     firebaseInitialized = true;
     console.log('[auth] Firebase Admin initialized');

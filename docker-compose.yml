@@ -15,6 +15,12 @@ services:
       POSTGRES_DB: nexus
       POSTGRES_USER: root
       POSTGRES_PASSWORD: rootpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d nexus"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -30,6 +36,17 @@ services:
     ports:
       - "8085:8085"
 
+  pubsub-init:
+    image: python:3.12-alpine
+    depends_on:
+      - pubsub-emulator
+    entrypoint: ["/bin/sh", "/scripts/pubsub_emulator_init.sh"]
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      GCP_PROJECT_ID: nexus-local
+    volumes:
+      - ./scripts/seed:/scripts:ro
+
   # ── Services ──
   nexus-api:
     build:
@@ -39,19 +56,23 @@ services:
       - "8080:8080"
     env_file: .env.local
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   nexus-socket:
     build:
       context: .
       dockerfile: services/nexus-socket/Dockerfile
     ports:
-      - "3000:3000"
+      - "3000:3001"
     env_file: .env.local
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   nexus-rag:
     build:
@@ -83,11 +104,16 @@ services:
       dockerfile: services/nexus-ai-worker/Dockerfile
     env_file: .env.local
     depends_on:
-      - redis
-      - postgres
-      - pubsub-emulator
-      - nexus-rag
-      - nexus-ai-gateway
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      pubsub-init:
+        condition: service_completed_successfully
+      nexus-rag:
+        condition: service_started
+      nexus-ai-gateway:
+        condition: service_started
 
   nexus-billing:
     build:
@@ -97,8 +123,10 @@ services:
       - "8082:8082"
     env_file: .env.local
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
 
 
