@@ -6,7 +6,7 @@ import {
   useRef,
   useMemo,
 } from "react"
-import { useAuth } from "./AuthContext"
+import { useAuthStore } from "../stores/authStore"
 import { getProfile } from "../api/auth"
 import apiClient from "../api/client"
 import { useSocket } from "../hooks/useSocket"
@@ -46,7 +46,7 @@ const WorkspaceContext = createContext<WorkspaceContextType | null>(null)
 const EMPTY_CHAT: Chat = { id: "null", title: "", messages: [] }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const { token, userEmail, username } = useAuth()
+  const { token, userEmail, username } = useAuthStore()
 
   const [groups, setGroups] = useState<Group[]>([])
   const [activeGroupId, setActiveGroupId] = useState("")

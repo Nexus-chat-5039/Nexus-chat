@@ -53,14 +53,14 @@ type Tenant struct {
 }
 
 type User struct {
-	ID          pgtype.UUID        `json:"id"`
-	FirebaseUid string             `json:"firebase_uid"`
-	Email       string             `json:"email"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
-	SystemRole  string             `json:"system_role"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	LastSeen    pgtype.Timestamptz `json:"last_seen"`
+	ID           pgtype.UUID        `json:"id"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	DisplayName  string             `json:"display_name"`
+	AvatarUrl    string             `json:"avatar_url"`
+	SystemRole   string             `json:"system_role"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastSeen     pgtype.Timestamptz `json:"last_seen"`
 }
 
 type Workspace struct {

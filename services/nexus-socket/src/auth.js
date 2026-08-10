@@ -1,42 +1,21 @@
 /**
- * Firebase Admin SDK initialization for WebSocket authentication.
- * Verifies Firebase ID tokens on socket connection.
+ * JWT authentication middleware for WebSocket connections.
+ * Verifies JWT tokens on socket connection.
  */
 
-const admin = require('firebase-admin');
-const config = require('./config');
+const jwt = require('jsonwebtoken');
 
-// Initialize Firebase Admin — uses Application Default Credentials in GKE,
-// or GOOGLE_APPLICATION_CREDENTIALS env var for local development.
-let firebaseInitialized = false;
-
-function initFirebase() {
-  if (firebaseInitialized) return;
-
-  if (!config.FIREBASE_PROJECT_ID) {
-    console.warn('[auth] FIREBASE_PROJECT_ID not set — running in dev mode (auth disabled)');
-    return;
-  }
-
-  try {
-    admin.initializeApp({
-      projectId: config.FIREBASE_PROJECT_ID,
-    });
-    firebaseInitialized = true;
-    console.log('[auth] Firebase Admin initialized');
-  } catch (err) {
-    console.warn('[auth] Firebase init failed — auth will be disabled:', err.message);
-  }
-}
+// Load JWT secret from environment
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecret-dev-key';
 
 /**
- * Socket.IO middleware that verifies Firebase ID tokens.
+ * Socket.IO middleware that verifies JWT tokens.
  * Attaches decoded user info to socket.data.user on success.
  *
  * Usage:
- *   io.use(firebaseAuthMiddleware);
+ *   io.use(jwtAuthMiddleware);
  */
-async function firebaseAuthMiddleware(socket, next) {
+async function jwtAuthMiddleware(socket, next) {
   const token = socket.handshake.auth?.token;
 
   if (!token) {
@@ -44,20 +23,13 @@ async function firebaseAuthMiddleware(socket, next) {
     return next(new Error('Authentication required'));
   }
 
-  // Skip Firebase verification if not initialized (local dev mode)
-  if (!firebaseInitialized) {
-    console.warn('[auth] Firebase not initialized — allowing connection in dev mode');
-    socket.data.user = { uid: 'dev-user', email: 'dev@nexus.local', name: 'Dev User' };
-    return next();
-  }
-
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = jwt.verify(token, JWT_SECRET);
     socket.data.user = {
-      uid: decoded.uid,
+      uid: decoded.user_id,
       email: decoded.email,
-      name: decoded.name || decoded.email,
-      picture: decoded.picture || '',
+      name: decoded.email, // We didn't encode display_name in JWT, use email as fallback
+      picture: '',
     };
     console.log(`[auth] Authenticated: ${decoded.email}`);
     next();
@@ -67,4 +39,4 @@ async function firebaseAuthMiddleware(socket, next) {
   }
 }
 
-module.exports = { initFirebase, firebaseAuthMiddleware };
+module.exports = { jwtAuthMiddleware };

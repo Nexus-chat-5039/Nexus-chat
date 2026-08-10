@@ -39,8 +39,11 @@ func main() {
 
 	queries := database.New(pool)
 
-	// ---- Firebase Auth ----
-	middleware.InitFirebase(ctx, cfg.FirebaseProjectID)
+	// ---- Auth Settings ----
+	jwtExpiry, err := time.ParseDuration(cfg.JWTExpiry)
+	if err != nil {
+		jwtExpiry = 24 * time.Hour
+	}
 
 	// ---- Gin Router ----
 	router := gin.Default()
@@ -66,31 +69,37 @@ func main() {
 
 	// ---- API Routes ----
 	api := router.Group("/api")
-	api.Use(middleware.FirebaseAuthMiddleware())
 
-	// Auth
-	authHandler := handlers.NewAuthHandler(queries)
-	api.POST("/auth/session", authHandler.CreateSession)
-	api.GET("/auth/me", authHandler.GetMe)
+	// Public Auth Routes
+	authHandler := handlers.NewAuthHandler(queries, cfg.JWTSecret, jwtExpiry)
+	api.POST("/auth/register", authHandler.Register)
+	api.POST("/auth/login", authHandler.Login)
+
+	// Protected Routes (Require JWT)
+	protected := api.Group("/")
+	protected.Use(middleware.JWTAuthMiddleware(cfg.JWTSecret))
+
+	// Protected Auth
+	protected.GET("/auth/me", authHandler.GetMe)
 
 	// Workspaces
 	wsHandler := handlers.NewWorkspaceHandler(queries)
-	api.POST("/workspaces", wsHandler.Create)
-	api.GET("/workspaces", wsHandler.List)
-	api.GET("/workspaces/:id", wsHandler.Get)
-	api.GET("/workspaces/:id/members", wsHandler.ListMembers)
-	api.POST("/workspaces/:id/members", wsHandler.AddMember)
+	protected.POST("/workspaces", wsHandler.Create)
+	protected.GET("/workspaces", wsHandler.List)
+	protected.GET("/workspaces/:id", wsHandler.Get)
+	protected.GET("/workspaces/:id/members", wsHandler.ListMembers)
+	protected.POST("/workspaces/:id/members", wsHandler.AddMember)
 
 	// Groups
 	groupHandler := handlers.NewGroupHandler(queries)
-	api.POST("/groups", groupHandler.Create)
-	api.GET("/groups", groupHandler.List)
+	protected.POST("/groups", groupHandler.Create)
+	protected.GET("/groups", groupHandler.List)
 
 	// Chats
 	chatHandler := handlers.NewChatHandler(queries)
-	api.POST("/chats", chatHandler.Create)
-	api.GET("/chats", chatHandler.List)
-	api.GET("/chats/:id/messages", chatHandler.ListMessages)
+	protected.POST("/chats", chatHandler.Create)
+	protected.GET("/chats", chatHandler.List)
+	protected.GET("/chats/:id/messages", chatHandler.ListMessages)
 
 	// ---- HTTP Server ----
 	srv := &http.Server{

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useRef, useEffect } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
-import { useAuth } from "./context/AuthContext"
+import { useAuthStore } from "./stores/authStore"
 import { useToast } from "./hooks/useToast"
 import NexusToast from "./components/ui/NexusToast"
 import gsap from "gsap"
@@ -12,7 +12,7 @@ const Profile = lazy(() => import("./pages/Profile"))
 const Landing = lazy(() => import("./pages/Landing"))
 const Onboarding = lazy(() => import("./pages/Onboarding"))
 const Settings = lazy(() => import("./pages/Settings"))
-const AuthCallback = lazy(() => import("./pages/AuthCallback"))
+
 
 function LoadingFallback() {
   return (
@@ -47,7 +47,7 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { token } = useAuth()
+  const { token } = useAuthStore()
   const { toasts, dismissToast } = useToast()
 
   return (
@@ -110,14 +110,7 @@ export default function App() {
               </PageTransition>
             }
           />
-          <Route
-            path="/auth/callback"
-            element={
-              <PageTransition>
-                <AuthCallback />
-              </PageTransition>
-            }
-          />
+
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Suspense>

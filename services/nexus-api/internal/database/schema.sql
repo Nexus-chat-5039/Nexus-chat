@@ -15,8 +15,8 @@ CREATE TABLE tenants (
 -- Users
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    firebase_uid VARCHAR(255) NOT NULL UNIQUE,
     email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(255) NOT NULL DEFAULT '',
     avatar_url TEXT NOT NULL DEFAULT '',
     system_role VARCHAR(50) NOT NULL DEFAULT 'user',

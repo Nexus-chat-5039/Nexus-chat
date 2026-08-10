@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { useAuth } from "../context/AuthContext"
+import { useAuthStore } from "../stores/authStore"
 import { useWorkspace } from "../context/WorkspaceContext"
 import { updateProfile, getProfile, uploadAvatar } from "../api/auth"
 import { getImageUrl } from "../api/config"
@@ -10,7 +10,7 @@ import NexusInput from "../components/ui/NexusInput"
 import GlassCard from "../components/ui/GlassCard"
 
 export default function Profile() {
-  const { token, login } = useAuth()
+  const { token, login } = useAuthStore()
   const { userEmail, username: currentUsername } = useWorkspace()
   const navigate = useNavigate()
 
@@ -65,7 +65,7 @@ export default function Profile() {
     try {
       if (!token) throw new Error("Not authenticated")
       const data = await updateProfile(username, email, fullName, bio)
-      login(data.access_token)
+      login(data.access_token, email || userEmail, username || currentUsername)
       setSuccess("Profile updated")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update profile")

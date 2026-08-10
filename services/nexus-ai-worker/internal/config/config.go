@@ -6,15 +6,15 @@ import (
 
 type Config struct {
 	// Infrastructure
-	GCPProjectID   string
-	PubSubSubID    string
-	DatabaseURL    string
-	RedisURL       string
+	GCPProjectID string
+	PubSubSubID  string
+	DatabaseURL  string
+	RedisURL     string
 
 	// Downstream Services
-	RAGServiceURL  string
-	GatewayURL     string
-	BillingURL     string
+	RAGServiceURL string
+	GatewayURL    string
+	BillingURL    string
 }
 
 func LoadConfig() *Config {

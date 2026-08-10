@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { Settings, Plus, ChevronDown, ChevronRight, Hash, LogOut, User } from "lucide-react"
-import { useAuth } from "../context/AuthContext"
+import { useAuthStore } from "../stores/authStore"
 import Modal from "../components/Modal"
 import type { Group } from "../types"
 
@@ -33,7 +33,7 @@ export default function Sidebar({
   userEmail,
 }: Props) {
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const { logout } = useAuthStore()
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [modalType, setModalType] = useState<"group" | "chat" | "join" | null>(null)
   const [inputValue, setInputValue] = useState("")

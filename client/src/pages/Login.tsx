@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate, Link } from "react-router-dom"
-import { useAuth } from "../context/AuthContext"
-import { API_URL } from "../api/config"
+import { useAuthStore } from "../stores/authStore"
+import { auth, googleProvider } from "../firebase/config"
+import { signInWithEmailAndPassword, sendPasswordResetEmail, signInWithPopup } from "firebase/auth"
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react"
 import AmbientBackground from "../components/AmbientBackground"
 import NexusButton from "../components/ui/NexusButton"
@@ -10,7 +11,7 @@ import GlassCard from "../components/ui/GlassCard"
 import gsap from "gsap"
 
 export default function Login() {
-  const [identifier, setIdentifier] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -19,9 +20,16 @@ export default function Login() {
   const [resetEmail, setResetEmail] = useState("")
   const [resetSent, setResetSent] = useState(false)
 
-  const { login } = useAuth()
+  const { token } = useAuthStore()
   const navigate = useNavigate()
   const cardRef = useRef<HTMLDivElement>(null)
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (token) {
+      navigate("/chat", { replace: true })
+    }
+  }, [token, navigate])
 
   useEffect(() => {
     document.title = "Login — Nexus Chat"
@@ -43,28 +51,30 @@ export default function Login() {
   }, [])
 
   const handleLogin = async () => {
-    if (!identifier.trim() || !password) return
+    if (!email.trim() || !password) return
     setError("")
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
-      })
+      await signInWithEmailAndPassword(auth, email, password)
+      // The onAuthStateChanged listener in authStore will handle the session token exchange
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message || "Login failed")
+      setLoading(false)
+    }
+  }
 
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.detail || "Invalid credentials")
-      }
-
-      const data = await res.json()
-      login(data.access_token)
-      navigate("/chat")
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed")
-    } finally {
+  const handleGoogleLogin = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    setError("")
+    setLoading(true)
+    try {
+      await signInWithPopup(auth, googleProvider)
+      // Session handled by onAuthStateChanged
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message || "Google login failed")
       setLoading(false)
     }
   }
@@ -72,16 +82,13 @@ export default function Login() {
   const handleRequestReset = async () => {
     if (!resetEmail.trim()) return
     setLoading(true)
+    setError("")
     try {
-      const res = await fetch(`${API_URL}/auth/request-reset-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail }),
-      })
-      if (!res.ok) throw new Error("Failed to send reset email")
+      await sendPasswordResetEmail(auth, resetEmail)
       setResetSent(true)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to send reset email")
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message || "Failed to send reset email")
     } finally {
       setLoading(false)
     }
@@ -114,9 +121,9 @@ export default function Login() {
               <div className="login-field mb-4">
                 <NexusInput
                   label="Email"
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                   placeholder="you@company.com"
                   icon={<Mail className="w-4 h-4" />}
@@ -160,7 +167,7 @@ export default function Login() {
                 <NexusButton
                   fullWidth
                   onClick={handleLogin}
-                  disabled={loading || !identifier || !password}
+                  disabled={loading || !email || !password}
                   loading={loading}
                   className="gap-2"
                 >
@@ -236,8 +243,8 @@ export default function Login() {
 
               {/* Google SSO */}
               <div className="login-alt">
-                <a
-                  href={`${API_URL}/auth/login/google`}
+                <button
+                  onClick={handleGoogleLogin}
                   className="flex w-full items-center justify-center gap-3 rounded-xl border border-nexus-border py-2.5 text-sm font-medium transition-all hover:bg-nexus-hover active:scale-[0.98]"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
@@ -247,7 +254,7 @@ export default function Login() {
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                   </svg>
                   Google
-                </a>
+                </button>
 
                 {/* Sign up link */}
                 <p className="mt-6 text-center text-sm text-nexus-muted">

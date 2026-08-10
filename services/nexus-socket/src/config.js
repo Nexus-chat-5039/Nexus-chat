@@ -18,10 +18,9 @@ module.exports = {
   // Firebase — for WebSocket authentication
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
 
-  // GCP Pub/Sub — for publishing AI inference requests
-  GCP_PROJECT_ID: process.env.GCP_PROJECT_ID || 'nexus-local',
-  PUBSUB_TOPIC_AI_INFERENCE: process.env.PUBSUB_TOPIC_AI_INFERENCE || 'ai.inference',
-  PUBSUB_TOPIC_EMBED: process.env.PUBSUB_TOPIC_EMBED || 'embed.messages',
+  // Redis Streams — for publishing async AI inference and embed tasks
+  REDIS_STREAM_AI: process.env.REDIS_STREAM_AI || 'stream:ai.inference',
+  REDIS_STREAM_EMBED: process.env.REDIS_STREAM_EMBED || 'stream:embed.messages',
 
   // CORS
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',

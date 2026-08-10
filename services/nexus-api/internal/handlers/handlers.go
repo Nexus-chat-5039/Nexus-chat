@@ -1,70 +1,162 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/crypto/bcrypt"
 
 	"nexus/services/nexus-api/internal/database"
+	"nexus/services/nexus-api/internal/middleware"
 )
 
+// ────────────────────────────────────────────────────────────────
+// Auth Handler
+// ────────────────────────────────────────────────────────────────
+
 type AuthHandler struct {
-	db *database.Queries
+	db        *database.Queries
+	jwtSecret string
+	jwtExpiry time.Duration
 }
 
-func NewAuthHandler(db *database.Queries) *AuthHandler {
-	return &AuthHandler{db: db}
+func NewAuthHandler(db *database.Queries, jwtSecret string, jwtExpiry time.Duration) *AuthHandler {
+	return &AuthHandler{db: db, jwtSecret: jwtSecret, jwtExpiry: jwtExpiry}
 }
 
-// POST /api/auth/session — Upsert user on Firebase login
-func (h *AuthHandler) CreateSession(c *gin.Context) {
+// POST /api/auth/register — Create a new user account
+func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
+		Email       string `json:"email" binding:"required,email"`
+		Password    string `json:"password" binding:"required,min=6"`
 		DisplayName string `json:"display_name"`
-		AvatarURL   string `json:"avatar_url"`
 	}
-	c.ShouldBindJSON(&req)
-
-	firebaseUID, _ := c.Get("firebase_uid")
-	email, _ := c.Get("user_email")
-	name, _ := c.Get("user_name")
-
-	displayName := req.DisplayName
-	if displayName == "" {
-		if n, ok := name.(string); ok {
-			displayName = n
-		}
-	}
-
-	avatarURL := req.AvatarURL
-
-	user, err := h.db.UpsertUser(c.Request.Context(), database.UpsertUserParams{
-		FirebaseUid: firebaseUID.(string),
-		Email:       email.(string),
-		DisplayName: displayName,
-		AvatarUrl:   avatarURL,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upsert user"})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user": user})
+	// Hash password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
+		return
+	}
+
+	displayName := req.DisplayName
+	if displayName == "" {
+		displayName = req.Email
+	}
+
+	// Create user in DB
+	user, err := h.db.CreateUser(c.Request.Context(), database.CreateUserParams{
+		Email:        req.Email,
+		PasswordHash: string(hash),
+		DisplayName:  displayName,
+	})
+	if err != nil {
+		// Check for duplicate email
+		c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+		return
+	}
+
+	// Generate JWT
+	userID := fmt.Sprintf("%x-%x-%x-%x-%x",
+		user.ID.Bytes[0:4], user.ID.Bytes[4:6], user.ID.Bytes[6:8],
+		user.ID.Bytes[8:10], user.ID.Bytes[10:16])
+
+	token, err := middleware.GenerateJWT(userID, user.Email, h.jwtSecret, h.jwtExpiry)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"user":  sanitizeUser(user),
+		"token": token,
+	})
+}
+
+// POST /api/auth/login — Authenticate with email + password
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req struct {
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Look up user
+	user, err := h.db.GetUserByEmail(c.Request.Context(), req.Email)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	// Compare password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	// Update last seen
+	h.db.UpdateLastSeen(c.Request.Context(), user.ID)
+
+	// Generate JWT
+	userID := fmt.Sprintf("%x-%x-%x-%x-%x",
+		user.ID.Bytes[0:4], user.ID.Bytes[4:6], user.ID.Bytes[6:8],
+		user.ID.Bytes[8:10], user.ID.Bytes[10:16])
+
+	token, err := middleware.GenerateJWT(userID, user.Email, h.jwtSecret, h.jwtExpiry)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user":  sanitizeUser(user),
+		"token": token,
+	})
 }
 
 // GET /api/auth/me — Get current user profile
 func (h *AuthHandler) GetMe(c *gin.Context) {
-	firebaseUID, _ := c.Get("firebase_uid")
+	userID, _ := c.Get("user_id")
 
-	user, err := h.db.GetUserByFirebaseUID(c.Request.Context(), firebaseUID.(string))
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
+
+	user, err := h.db.GetUserByID(c.Request.Context(), uid)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user": user})
+	c.JSON(http.StatusOK, gin.H{"user": sanitizeUser(user)})
 }
+
+// sanitizeUser strips the password_hash from the response.
+func sanitizeUser(u database.User) gin.H {
+	return gin.H{
+		"id":           u.ID,
+		"email":        u.Email,
+		"display_name": u.DisplayName,
+		"avatar_url":   u.AvatarUrl,
+		"system_role":  u.SystemRole,
+		"created_at":   u.CreatedAt,
+		"last_seen":    u.LastSeen,
+	}
+}
+
+// ────────────────────────────────────────────────────────────────
+// Workspace Handler
+// ────────────────────────────────────────────────────────────────
 
 type WorkspaceHandler struct {
 	db *database.Queries
@@ -100,11 +192,13 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 	}
 
 	// Add creator as owner
-	firebaseUID, _ := c.Get("firebase_uid")
-	user, _ := h.db.GetUserByFirebaseUID(c.Request.Context(), firebaseUID.(string))
+	userID, _ := c.Get("user_id")
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
+
 	h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
 		WorkspaceID: ws.ID,
-		UserID:      user.ID,
+		UserID:      uid,
 		Role:        "owner",
 	})
 
@@ -119,19 +213,16 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 		return
 	}
 
-	firebaseUID, _ := c.Get("firebase_uid")
-	user, err := h.db.GetUserByFirebaseUID(c.Request.Context(), firebaseUID.(string))
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
-		return
-	}
+	userID, _ := c.Get("user_id")
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
 
 	var tid pgtype.UUID
 	tid.Scan(tenantID)
 
 	workspaces, err := h.db.ListWorkspacesByTenant(c.Request.Context(), database.ListWorkspacesByTenantParams{
 		TenantID: tid,
-		UserID:   user.ID,
+		UserID:   uid,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list workspaces"})
@@ -197,6 +288,10 @@ func (h *WorkspaceHandler) AddMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// ────────────────────────────────────────────────────────────────
+// Group Handler
+// ────────────────────────────────────────────────────────────────
+
 type GroupHandler struct {
 	db *database.Queries
 }
@@ -218,8 +313,9 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		return
 	}
 
-	firebaseUID, _ := c.Get("firebase_uid")
-	user, _ := h.db.GetUserByFirebaseUID(c.Request.Context(), firebaseUID.(string))
+	userID, _ := c.Get("user_id")
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
 
 	var tenantID, wsID pgtype.UUID
 	tenantID.Scan(req.TenantID)
@@ -229,7 +325,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		TenantID:    tenantID,
 		WorkspaceID: wsID,
 		Name:        req.Name,
-		OwnerID:     user.ID,
+		OwnerID:     uid,
 		AiEnabled:   req.AIEnabled,
 	})
 	if err != nil {
@@ -257,6 +353,10 @@ func (h *GroupHandler) List(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"groups": groups})
 }
+
+// ────────────────────────────────────────────────────────────────
+// Chat Handler
+// ────────────────────────────────────────────────────────────────
 
 type ChatHandler struct {
 	db *database.Queries

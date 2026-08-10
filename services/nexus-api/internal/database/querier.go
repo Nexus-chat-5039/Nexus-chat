@@ -14,11 +14,12 @@ type Querier interface {
 	AddWorkspaceMember(ctx context.Context, arg AddWorkspaceMemberParams) error
 	CreateChat(ctx context.Context, arg CreateChatParams) (Chat, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
 	DeleteGroup(ctx context.Context, id pgtype.UUID) error
 	GetChatByID(ctx context.Context, id pgtype.UUID) (Chat, error)
 	GetGroupByID(ctx context.Context, id pgtype.UUID) (Group, error)
-	GetUserByFirebaseUID(ctx context.Context, firebaseUid string) (User, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	GetWorkspaceByID(ctx context.Context, id pgtype.UUID) (Workspace, error)
 	GetWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error)
@@ -30,7 +31,7 @@ type Querier interface {
 	ListWorkspacesByTenant(ctx context.Context, arg ListWorkspacesByTenantParams) ([]Workspace, error)
 	RemoveWorkspaceMember(ctx context.Context, arg RemoveWorkspaceMemberParams) error
 	UpdateGroupAI(ctx context.Context, arg UpdateGroupAIParams) error
-	UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error)
+	UpdateLastSeen(ctx context.Context, id pgtype.UUID) error
 }
 
 var _ Querier = (*Queries)(nil)

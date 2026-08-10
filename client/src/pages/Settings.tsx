@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { useAuth } from "../context/AuthContext"
+import { useAuthStore } from "../stores/authStore"
 import { useWorkspace } from "../context/WorkspaceContext"
 import { getProfile, updateProfile } from "../api/auth"
 import { API_URL, getImageUrl } from "../api/config"
@@ -15,7 +15,7 @@ import NexusButton from "../components/ui/NexusButton"
 type Section = "account" | "privacy" | "notifications" | "appearance"
 
 export default function Settings() {
-  const { logout, token } = useAuth()
+  const { logout, token } = useAuthStore()
   const { username, userEmail } = useWorkspace()
   const navigate = useNavigate()
 

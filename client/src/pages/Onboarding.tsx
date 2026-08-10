@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { useAuth } from "../context/AuthContext"
+import { useAuthStore } from "../stores/authStore"
 import { updateProfile } from "../api/auth"
 import { ArrowRight, Camera, Check, User, Briefcase, Users } from "lucide-react"
 import AmbientBackground from "../components/AmbientBackground"
@@ -24,7 +24,7 @@ const teamSizes = [
 const useCases = ["Engineering", "Design", "Product", "Marketing", "Support", "Other"]
 
 export default function Onboarding() {
-  const { token, login } = useAuth()
+  const { token } = useAuthStore()
   const navigate = useNavigate()
 
   const [step, setStep] = useState(0)

@@ -11,17 +11,45 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getUserByFirebaseUID = `-- name: GetUserByFirebaseUID :one
-SELECT id, firebase_uid, email, display_name, avatar_url, system_role, created_at, last_seen FROM users WHERE firebase_uid = $1
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (email, password_hash, display_name)
+VALUES ($1, $2, $3)
+RETURNING id, email, password_hash, display_name, avatar_url, system_role, created_at, last_seen
 `
 
-func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByFirebaseUID, firebaseUid)
+type CreateUserParams struct {
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+	DisplayName  string `json:"display_name"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.DisplayName)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.FirebaseUid,
 		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.SystemRole,
+		&i.CreatedAt,
+		&i.LastSeen,
+	)
+	return i, err
+}
+
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, password_hash, display_name, avatar_url, system_role, created_at, last_seen FROM users WHERE email = $1
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.SystemRole,
@@ -32,7 +60,7 @@ func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) 
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, firebase_uid, email, display_name, avatar_url, system_role, created_at, last_seen FROM users WHERE id = $1
+SELECT id, email, password_hash, display_name, avatar_url, system_role, created_at, last_seen FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
@@ -40,8 +68,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.FirebaseUid,
 		&i.Email,
+		&i.PasswordHash,
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.SystemRole,
@@ -51,41 +79,11 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	return i, err
 }
 
-const upsertUser = `-- name: UpsertUser :one
-INSERT INTO users (firebase_uid, email, display_name, avatar_url, last_seen)
-VALUES ($1, $2, $3, $4, NOW())
-ON CONFLICT (firebase_uid) DO UPDATE SET
-    email = EXCLUDED.email,
-    display_name = EXCLUDED.display_name,
-    avatar_url = EXCLUDED.avatar_url,
-    last_seen = NOW()
-RETURNING id, firebase_uid, email, display_name, avatar_url, system_role, created_at, last_seen
+const updateLastSeen = `-- name: UpdateLastSeen :exec
+UPDATE users SET last_seen = NOW() WHERE id = $1
 `
 
-type UpsertUserParams struct {
-	FirebaseUid string `json:"firebase_uid"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
-	AvatarUrl   string `json:"avatar_url"`
-}
-
-func (q *Queries) UpsertUser(ctx context.Context, arg UpsertUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, upsertUser,
-		arg.FirebaseUid,
-		arg.Email,
-		arg.DisplayName,
-		arg.AvatarUrl,
-	)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.FirebaseUid,
-		&i.Email,
-		&i.DisplayName,
-		&i.AvatarUrl,
-		&i.SystemRole,
-		&i.CreatedAt,
-		&i.LastSeen,
-	)
-	return i, err
+func (q *Queries) UpdateLastSeen(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateLastSeen, id)
+	return err
 }

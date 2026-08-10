@@ -15,7 +15,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { Pool } = require('pg');
 const config = require('./config');
-const { initFirebase, firebaseAuthMiddleware } = require('./auth');
+const { jwtAuthMiddleware } = require('./auth');
 const { setupRedisAdapter, setupAIStreamSubscriber } = require('./redis');
 const { registerRoomHandlers } = require('./handlers/rooms');
 const { registerPresenceHandlers } = require('./handlers/presence');
@@ -73,9 +73,8 @@ async function main() {
     pingInterval: 25000,
   });
 
-  // ---- Firebase Auth ----
-  initFirebase();
-  io.use(firebaseAuthMiddleware);
+  // ---- JWT Auth ----
+  io.use(jwtAuthMiddleware);
 
   // ---- Redis Adapter (horizontal scaling) ----
   try {
@@ -142,7 +141,7 @@ async function main() {
     httpServer.close(() => console.log('[shutdown] HTTP server closed'));
 
     // Close Postgres pool
-    await pgPool.end().catch(() => {});
+    await pgPool.end().catch(() => { });
     console.log('[shutdown] Postgres pool closed');
 
     process.exit(0);

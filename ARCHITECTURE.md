@@ -1,6 +1,6 @@
 # Nexus Workplace AI — Production Architecture (Final)
 
-> **Scope**: Complete architectural blueprint for transforming Nexus from a monolithic Python/FastAPI application into a **multi-tenant SaaS** platform built on **Golang + Node.js microservices**, **Google Cloud Platform**, and a **multi-model AI gateway**.
+> **Scope**: Complete architectural blueprint for transforming Nexus from a monolithic Python/FastAPI application into a **multi-tenant SaaS** platform built on **Golang + Node.js + C++ microservices**, **Google Cloud Platform**, and a **multi-model AI gateway**.
 
 ---
 
@@ -10,17 +10,19 @@
 2. [Target Production Architecture](#2-target-production-architecture)
 3. [Microservices Breakdown](#3-microservices-breakdown)
 4. [Repository Structure & gRPC Proto](#4-repository-structure--grpc-proto)
+27. [C++ Integration Plan — nexus-compute](#27-c-integration-plan--nexus-compute)
 5. [Multi-Tenant SaaS Data Model](#5-multi-tenant-saas-data-model)
 6. [Real-Time Messaging Flow](#6-real-time-messaging-flow)
 7. [AI Streaming Response Architecture](#7-ai-streaming-response-architecture)
+28. [Redis Streams — Message Queue Architecture](#28-redis-streams--message-queue-architecture)
 8. [Authentication — Firebase](#8-authentication--firebase)
 9. [AI Gateway — Multi-Model Routing](#9-ai-gateway--multi-model-routing)
 10. [RAG Pipeline — Dedicated Retrieval Service](#10-rag-pipeline--dedicated-retrieval-service)
-11. [Caching Strategy — GCP Memorystore Redis](#11-caching-strategy--gcp-memorystore-redis)
-12. [Database Layer — AlloyDB (PostgreSQL)](#12-database-layer--alloydb-postgresql)
+11. [Caching Strategy — Upstash Redis](#11-caching-strategy--upstash-redis)
+12. [Database Layer — Cloud SQL (PostgreSQL)](#12-database-layer--cloud-sql-postgresql)
 13. [Vector Search — Qdrant Cloud](#13-vector-search--qdrant-cloud)
 14. [File Storage — Google Cloud Storage](#14-file-storage--google-cloud-storage)
-15. [Async Job Processing — Google Cloud Pub/Sub](#15-async-job-processing--google-cloud-pubsub)
+15. [Async Job Processing — Redis Streams](#15-async-job-processing--redis-streams)
 16. [API Gateway & Rate Limiting](#16-api-gateway--rate-limiting)
 17. [Security, GDPR & Compliance](#17-security-gdpr--compliance)
 18. [Backup & Disaster Recovery](#18-backup--disaster-recovery)
@@ -71,14 +73,14 @@ graph TB
 | Area | Current State | Risk | Resolution |
 |---|---|---|---|
 | **Backend** | Python/FastAPI monolith | Can't scale individual concerns | Split into Go + Node.js + Python microservices |
-| **Socket.IO adapter** | In-memory | Sessions lost on restart; no horizontal scaling | Memorystore Redis adapter |
-| **Message queue** | Direct synchronous calls | AI blocks the socket event loop | Google Cloud Pub/Sub |
+| **Socket.IO adapter** | In-memory | Sessions lost on restart; no horizontal scaling | Upstash Redis adapter |
+| **Message queue** | Direct synchronous calls | AI blocks the socket event loop | Redis Streams (Upstash Redis) |
 | **File storage** | Local filesystem | Files wiped on container restart | Google Cloud Storage |
 | **Embedding model** | SentenceTransformers in-process | ~400 MB RAM per pod; cold start > 30s | BGE-M3 in dedicated `nexus-rag` service |
 | **AI provider** | Hardcoded Gemini only | Single point of failure; no cost control | Multi-model AI Gateway |
 | **Vector search** | MongoDB `$vectorSearch` | Atlas-only vendor lock; no hybrid search | Qdrant Cloud |
 | **Authentication** | Custom JWT in localStorage | XSS vulnerable; OTP maintenance burden | Firebase Authentication |
-| **Rate limiting** | In-memory dict | Reset on restart; not shared | Memorystore Redis sliding window |
+| **Rate limiting** | In-memory dict | Reset on restart; not shared | Upstash Redis sliding window |
 | **Observability** | `print()` / basic `logger` | Zero visibility in production | GCP Cloud Logging/Monitoring/Trace |
 | **Security** | No WAF, no secret manager | Exposed to DDoS, secrets in .env | Cloud Armor + Secret Manager |
 | **Multi-tenancy** | None | Can't support organizations/teams | `tenant_id` + `workspace_id` everywhere |
@@ -104,20 +106,21 @@ graph TB
         SIO["nexus-socket (Node.js)\n(Socket.IO · Real-Time)"]
         RAG["nexus-rag (Python)\n(BGE-M3 · Reranker · Qdrant)"]
         AIGW["nexus-ai-gateway (Go)\n(Model Router · Fallback · Cost)"]
-        WRK["nexus-ai-worker (Go)\n(Pub/Sub Consumer)"]
+        WRK["nexus-ai-worker (Go)\n(Redis Streams Consumer)"]
         BILL["nexus-billing (Go)\n(Usage · Invoices · Quotas)"]
+        COMP["nexus-compute (C++)\n(Memory Mgmt · Zero-Copy · Indexes)"]
     end
 
-    subgraph Messaging["Google Cloud Pub/Sub"]
-        PUB["Topics:\n• ai.inference\n• embed.messages\n• notifications\n• webhooks"]
+    subgraph Messaging["Upstash Redis — Streams"]
+        PUB["Streams:\n• stream:ai.inference\n• stream:embed.messages\n• stream:notifications\n• stream:webhooks"]
     end
 
-    subgraph Cache["GCP Memorystore Redis"]
+    subgraph Cache["Upstash Redis — Cache"]
         MEM["• Socket.IO Adapter\n• Rate Limiting\n• Session Cache\n• AI Response Cache\n• Message Page Cache\n• Presence / Typing"]
     end
 
     subgraph Storage["Data & Storage Tier"]
-        PDB["AlloyDB (PostgreSQL)\n(Primary + Read Pool)"]
+        PDB["Cloud SQL (PostgreSQL 16)\n(Primary + Read Replica)"]
         QDR["Qdrant Cloud\n(Vector Search)"]
         GCS["Google Cloud Storage\n(Avatars · Documents · Exports)"]
         BQ["BigQuery\n(Analytics · Audit Stream)"]
@@ -141,6 +144,7 @@ graph TB
 
     PUB --> WRK
     WRK --> RAG
+    WRK --> COMP
     RAG --> QDR
     RAG --> AIGW
 
@@ -149,21 +153,21 @@ graph TB
     API --> GCS
     PDB -.->|LISTEN/NOTIFY + CDC| BQ
 
-    API & SIO & WRK & RAG & AIGW & BILL --> LOG & MON & TRC & ERR
+    API & SIO & WRK & RAG & AIGW & BILL & COMP --> LOG & MON & TRC & ERR
 ```
 
 ### Technology Stack Summary
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Language** | Go 1.22+ / Node.js 22 / Python 3.12 | Go for API/Gateway/Worker/Billing; Node.js for Socket; Python for RAG |
+| **Language** | Go 1.22+ / Node.js 22 / Python 3.12 / C++20 | Go for API/Gateway/Worker/Billing; Node.js for Socket; Python for RAG; C++ for Memory-Intensive Compute |
 | **Frontend** | React 19 + Vite | Client SPA |
 | **Auth** | Firebase Authentication | Google, GitHub, Email/Password |
 | **REST API** | Gin / Echo (Go) | HTTP routing in `nexus-api` |
 | **WebSocket** | Socket.IO (Node.js) + `@socket.io/redis-adapter` | Battle-tested real-time in `nexus-socket` |
-| **Message Queue** | Google Cloud Pub/Sub | Async AI inference & notifications |
-| **Cache** | GCP Memorystore (Redis 7) | Sessions, rate limiting, Socket.IO adapter |
-| **Database** | AlloyDB (PostgreSQL) | Multi-tenant persistent data, RLS, ACID billing |
+| **Message Queue** | Upstash Redis Streams | Async AI inference, notifications, embedding jobs |
+| **Cache** | Upstash Redis | Sessions, rate limiting, Socket.IO adapter, pub/sub |
+| **Database** | Cloud SQL (PostgreSQL 16) | Multi-tenant persistent data, RLS, ACID billing |
 | **Vector DB** | Qdrant Cloud | Semantic search with hybrid retrieval |
 | **Object Storage** | Google Cloud Storage (GCS) | Avatars, documents, attachments |
 | **Analytics** | BigQuery | Audit logs, usage analytics, billing |
@@ -175,6 +179,7 @@ graph TB
 | **Tracing** | Cloud Trace | Distributed request tracing |
 | **Errors** | Cloud Error Reporting | Panic/crash grouping & alerts |
 | **Billing** | `nexus-billing` (Go) | Token metering, invoice generation, quota enforcement |
+| **High-Perf Compute** | `nexus-compute` (C++) | Custom allocators, mmap I/O, zero-copy buffers, in-memory indexes |
 | **Container Orchestration** | GKE Autopilot | Fully managed nodes, auto-scaling, per-pod billing |
 | **CI/CD** | GitHub Actions + Cloud Build | Lint → Test → Build → Deploy |
 
@@ -182,10 +187,11 @@ graph TB
 
 ## 3. Microservices Breakdown
 
-The monolithic FastAPI backend is decomposed into **six** focused microservices across **three languages**, each chosen for its strongest use case:
+The monolithic FastAPI backend is decomposed into **seven** focused microservices across **four languages**, each chosen for its strongest use case:
 - **Go** (4 services): API, AI Gateway, AI Worker, Billing — for high concurrency, minimal memory (~10 MB), sub-second cold starts.
 - **Node.js** (1 service): Socket — because the official Socket.IO library is battle-tested, feature-complete, and has native Redis adapter support. Go Socket.IO libraries (`googollee/go-socket.io`) are poorly maintained and lack features like auto-reconnection, binary payloads, and namespaces.
 - **Python** (1 service): RAG — because BGE-M3, BGE-Reranker, and HuggingFace/PyTorch run natively in Python.
+- **C++** (1 service): Compute — for workloads requiring extensive memory management: custom allocators, memory-mapped I/O, zero-copy buffers, and large in-memory data structures where Go/Python GC pauses are unacceptable.
 
 ```mermaid
 graph LR
@@ -194,7 +200,7 @@ graph LR
         
         AIGW["nexus-ai-gateway\n━━━━━━━━━━━━━\n• Model routing\n• Fallback chains\n• Cost tracking\n• Rate control\n• Response caching"]
         
-        WRK["nexus-ai-worker\n━━━━━━━━━━━━━\n• Pub/Sub consumer\n• Orchestrates RAG + LLM\n• Writes AI responses\n• Triggers embedding\n• Dead-letter handling"]
+        WRK["nexus-ai-worker\n━━━━━━━━━━━━━\n• Redis Streams consumer\n• Orchestrates RAG + LLM\n• Writes AI responses\n• Triggers embedding\n• Dead-letter handling"]
         
         BILL["nexus-billing\n━━━━━━━━━━━━━\n• Token usage tracking\n• Storage metering\n• API call counting\n• Invoice generation\n• Quota enforcement"]
     end
@@ -206,6 +212,10 @@ graph LR
     subgraph PythonService["Python Microservice"]
         RAG["nexus-rag\n━━━━━━━━━━━━━\n• BGE-M3 embeddings\n• Qdrant retrieval\n• BGE-Reranker scoring\n• Prompt construction\n• Context window mgmt"]
     end
+
+    subgraph CppService["C++ Microservice"]
+        COMP["nexus-compute\n━━━━━━━━━━━━━\n• Arena allocators\n• Memory-mapped file I/O\n• Zero-copy buffers\n• In-memory indexes\n• Binary payload processing"]
+    end
 ```
 
 ### Service Language Matrix
@@ -215,27 +225,30 @@ graph LR
 | `nexus-api` | **Go** | High-throughput REST, minimal memory |
 | `nexus-socket` | **Node.js** | Official Socket.IO library; native `@socket.io/redis-adapter`; auto-reconnect, rooms, namespaces |
 | `nexus-ai-gateway` | **Go** | Fast HTTP proxy, circuit breakers |
-| `nexus-ai-worker` | **Go** | Concurrent Pub/Sub consumer |
+| `nexus-ai-worker` | **Go** | Concurrent Redis Streams consumer |
 | `nexus-billing` | **Go** | High-frequency metering writes |
 | `nexus-rag` | **Python** | Native BGE-M3 / BGE-Reranker / PyTorch / HuggingFace |
+| `nexus-compute` | **C++** | Custom allocators, zero-copy buffers, mmap I/O, lock-free data structures; no GC pauses |
 
 ### Service Communication Matrix
 
 | From → To | Protocol | Purpose |
 |---|---|---|
 | `nexus-api` → `nexus-socket` | Redis PubSub | Push events to connected clients |
-| `nexus-socket` → Pub/Sub | gRPC (Pub/Sub client) | Enqueue AI inference jobs |
-| Pub/Sub → `nexus-ai-worker` | Push subscription | Deliver AI tasks to workers |
+| `nexus-socket` → Redis Streams | Redis protocol (XADD) | Enqueue AI inference jobs |
+| Redis Streams → `nexus-ai-worker` | Redis protocol (XREADGROUP) | Deliver AI tasks to workers |
 | `nexus-ai-worker` → `nexus-rag` | gRPC (internal) | Request context retrieval |
+| `nexus-ai-worker` → `nexus-compute` | gRPC (internal) | Offload memory-intensive processing |
 | `nexus-rag` → Qdrant Cloud | gRPC / HTTP | Vector similarity search |
 | `nexus-ai-worker` → `nexus-ai-gateway` | gRPC (internal) | Request LLM completion |
 | `nexus-ai-gateway` → LLM providers | HTTPS | Gemini, Claude, GPT, DeepSeek, Gemma |
 | `nexus-ai-gateway` → `nexus-billing` | gRPC (internal) | Report token usage per request |
 | `nexus-api` → `nexus-billing` | gRPC (internal) | Check tenant quota before operations |
+| `nexus-api` → `nexus-compute` | gRPC (internal) | File processing, thumbnail generation |
 | `nexus-billing` → BigQuery | Streaming insert | Usage analytics & invoice data |
 | `nexus-ai-worker` → Redis PubSub | Redis protocol | Broadcast AI reply to room |
-| All services → Memorystore | Redis protocol | Caching, rate limiting, sessions |
-| All services → AlloyDB | PostgreSQL wire protocol | Persistent data reads/writes, RLS enforced |
+| All services → Upstash Redis | Redis protocol | Caching, rate limiting, sessions, streams |
+| All services → Cloud SQL | PostgreSQL wire protocol | Persistent data reads/writes, RLS enforced |
 
 ### Service Resource Budgets (GKE Autopilot)
 
@@ -249,6 +262,7 @@ graph LR
 | `nexus-ai-gateway` | Go | 250m | 1000m | 128Mi | 512Mi | 2 → 8 |
 | `nexus-ai-worker` | Go | 500m | 2000m | 512Mi | 2Gi | 2 → 8 |
 | `nexus-billing` | Go | 250m | 1000m | 128Mi | 512Mi | 2 → 4 |
+| `nexus-compute` | C++ | 500m | 2000m | 1Gi | 4Gi | 2 → 6 |
 
 ---
 
@@ -286,6 +300,12 @@ nexus/
 │       ├── app/
 │       ├── Dockerfile
 │       └── requirements.txt
+│   └── nexus-compute/          (C++ — gRPC + Custom Allocators)
+│       ├── src/
+│       ├── include/
+│       ├── CMakeLists.txt
+│       ├── vcpkg.json
+│       └── Dockerfile
 ├── proto/                      (Shared gRPC definitions)
 │   ├── rag/
 │   │   └── rag.proto
@@ -293,6 +313,8 @@ nexus/
 │   │   └── gateway.proto
 │   ├── billing/
 │   │   └── billing.proto
+│   ├── compute/
+│   │   └── compute.proto
 │   └── buf.yaml
 ├── client/                     (React 19 + Vite)
 │   ├── src/
@@ -300,7 +322,7 @@ nexus/
 ├── infra/                      (Terraform / Pulumi)
 │   ├── gke/
 │   ├── pubsub/
-│   ├── memorystore/
+│   ├── redis/
 │   └── cloudstorage/
 ├── scripts/
 │   ├── migrate/                (Data migration scripts)
@@ -521,19 +543,19 @@ CREATE INDEX idx_audit_tenant_user_time ON audit_logs(tenant_id, user_id, create
 
 ## 6. Real-Time Messaging Flow
 
-### Non-Blocking AI with Pub/Sub + Streaming
+### Non-Blocking AI with Redis Streams + Streaming
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant SIO as nexus-socket (Node.js)
-    participant RED as Memorystore Redis
-    participant PUB as Cloud Pub/Sub
+    participant RED as Upstash Redis
+    participant STRM as Redis Streams
     participant WRK as nexus-ai-worker (Go)
     participant RAG as nexus-rag (Python)
     participant AIGW as nexus-ai-gateway (Go)
     participant LLM as LLM Provider
-    participant P as AlloyDB
+    participant P as Cloud SQL (PostgreSQL)
     participant Q as Qdrant
 
     C->>SIO: send_message {trigger_ai: true, tenant_id}
@@ -542,10 +564,10 @@ sequenceDiagram
     RED-->>SIO: fanout to all nexus-socket pods
     SIO-->>C: new_message (instant, <50ms)
 
-    SIO->>PUB: publish → ai.inference topic
-    Note over SIO,PUB: Returns immediately — socket is unblocked
+    SIO->>STRM: XADD stream:ai.inference {task payload}
+    Note over SIO,STRM: Returns immediately — socket is unblocked
 
-    PUB->>WRK: push delivery (ai.inference subscription)
+    STRM->>WRK: XREADGROUP (ai-workers consumer group)
     WRK->>RAG: gRPC: RetrieveContext(query, group_id, chat_id)
     RAG->>Q: vector search (BGE-M3 embedding)
     Q-->>RAG: top-50 candidates
@@ -567,9 +589,9 @@ sequenceDiagram
     WRK->>RED: PUBLISH room:{chat_id}:ai_stream {is_final: true}
     SIO-->>C: ai_stream_chunk {is_final: true}
 
-    WRK->>PUB: publish → embed.messages topic
-    Note over WRK,PUB: Async embedding pipeline
-    PUB->>WRK: consume embed.messages
+    WRK->>STRM: XADD stream:embed.messages {content, metadata}
+    Note over WRK,STRM: Async embedding pipeline
+    STRM->>WRK: XREADGROUP consume embed.messages
     WRK->>RAG: gRPC: EmbedAndStore(content, metadata)
     RAG->>Q: upsert vector point
 ```
@@ -590,7 +612,7 @@ graph LR
     end
 
     subgraph Redis
-        PUB["Memorystore Redis\nPubSub Adapter Channel"]
+        PUB["Upstash Redis\nPubSub Adapter Channel"]
     end
 
     C1 <--> P1
@@ -640,7 +662,7 @@ socket.on('ai_stream_chunk', ({ chatId, delta, isFinal, messageId }) => {
 3. **`nexus-ai-worker`** receives each `GenerateChunk` and publishes it to a Redis PubSub channel `room:{chat_id}:ai_stream`.
 4. **`nexus-socket`** (Node.js) receives the Redis message via the adapter and emits `ai_stream_chunk` to all clients in the room.
 5. **Client** renders tokens progressively with a typing animation.
-6. When `is_final: true` arrives, the worker inserts the complete message into AlloyDB.
+6. When `is_final: true` arrives, the worker inserts the complete message into Cloud SQL (PostgreSQL).
 
 ---
 
@@ -653,8 +675,8 @@ Custom JWT validation, password hashing, and OTP systems are **completely replac
     participant C as Client (React)
     participant FB as Firebase Auth
     participant API as nexus-api (Go)
-    participant RED as Memorystore Redis
-    participant M as AlloyDB
+    participant RED as Upstash Redis
+    participant M as Cloud SQL (PostgreSQL)
     participant SIO as Socket.IO Server
     Note over C,M: Login
     C->>FB: signInWithPopup(GoogleAuthProvider)
@@ -799,9 +821,9 @@ All vector searches are **pre-filtered** by `tenant_id` + `group_id` + `chat_id`
 
 ---
 
-## 11. Caching Strategy — GCP Memorystore Redis
+## 11. Caching Strategy — Upstash Redis
 
-**GCP Memorystore for Redis** (managed Redis 7) serves as the unified caching, pub/sub, and rate limiting layer.
+**Upstash Redis** (serverless Redis) serves as the unified caching, pub/sub, message queue (Streams), and rate limiting layer.
 
 ### Cache Taxonomy
 
@@ -811,16 +833,17 @@ graph TD
         IPC["sync.Map (Go) / lru_cache (Python)\n• Config values\n• Compiled regexes\n• Firebase public keys\nTTL: process lifetime"]
     end
 
-    subgraph L2["L2 — Memorystore Redis (Shared)"]
+    subgraph L2["L2 — Upstash Redis (Shared)"]
         SESS["Session Cache\nKey: session:{firebase_uid}\nTTL: 900s"]
         RATE["Rate Limit Counters\nKey: rl:{tenant}:{ip}:{endpoint}\nTTL: 60s (sliding window)"]
         PRES["User Presence\nKey: presence:{workspace}:{user}\nTTL: 30s (heartbeat)"]
         AICC["AI Response Cache\nKey: ai:{sha256(prompt)}\nTTL: 3600s"]
         MSGC["Message Page Cache\nKey: msg:{tenant}:{group}:{chat}:p{n}\nTTL: 60s"]
         GRPC["Group Members Cache\nKey: grp:{tenant}:{group}:members\nTTL: 300s"]
+        STRM["Message Queue (Streams)\nKey: stream:ai.inference\nKey: stream:embed.messages\nKey: stream:notifications"]
     end
 
-    subgraph L3["L3 — AlloyDB (Source of Truth)"]
+    subgraph L3["L3 — Cloud SQL PostgreSQL (Source of Truth)"]
         MDB["All persistent data"]
     end
 
@@ -856,7 +879,12 @@ ai:{sha256(prompt[:512])}             → {answer, model, tokens}  EX 3600
 # ── Message Pages ──
 msg:{tenant}:{group}:{chat}:p{n}      → JSON messages[]          EX 60
 
-# ── Group Membership ──
+# ── Message Queue (Streams) ──
+stream:ai.inference                      → XADD task payloads       Consumer group: ai-workers
+stream:embed.messages                    → XADD embed payloads      Consumer group: embed-workers
+stream:notifications                     → XADD notif payloads      Consumer group: notif-workers
+stream:webhooks                          → XADD webhook payloads    Consumer group: webhook-workers
+stream:deadletter                        → Failed messages (7d)     No consumer group
 grp:{tenant}:{group}:members          → JSON members[]           EX 300
 ```
 
@@ -867,7 +895,7 @@ flowchart TD
     REQ["GET /api/messages?chat_id=X&page=1"]
     RCHK{"Redis HIT?\nmsg:{tenant}:{group}:{chat}:p1"}
     RGET["Return cached JSON\n(~1ms)"]
-    MGET["Query AlloyDB\n(~10-30ms)"]
+    MGET["Query Cloud SQL\n(~10-30ms)"]
     RSET["SET Redis key\nEX 60s"]
     RESP["Return to client"]
     INVAL["On new message:\nDEL msg:{tenant}:{group}:{chat}:*"]
@@ -880,18 +908,18 @@ flowchart TD
 
 ---
 
-## 12. Database Layer — AlloyDB (PostgreSQL)
+## 12. Database Layer — Cloud SQL (PostgreSQL)
 
 ### Cluster Configuration
-- **Engine**: AlloyDB for PostgreSQL (fully managed, highly available).
-- **Topology**: Primary instance for writes + auto-scaling read pool.
-- **Features**: 4x faster reads than standard Postgres, built-in columnar engine for analytical queries, native Row-Level Security (RLS).
+- **Engine**: Cloud SQL for PostgreSQL 16 (fully managed on GCP).
+- **Topology**: Primary instance for writes + read replica for horizontal read scaling.
+- **Features**: Automated backups, point-in-time recovery, IAM integration, native Row-Level Security (RLS).
 
 ```mermaid
 graph LR
-    subgraph AlloyDB["AlloyDB Cluster"]
+    subgraph CloudSQL["Cloud SQL PostgreSQL"]
         PRI["Primary Instance\n(Writes)"]
-        RP["Read Pool\n(Auto-scaling reads)"]
+        RP["Read Replica\n(Auto-scaling reads)"]
         
         PRI -.->|Replication| RP
     end
@@ -902,7 +930,7 @@ graph LR
 ```go
 // internal/database/postgres.go
 func NewPostgresPool(ctx context.Context) (*pgxpool.Pool, error) {
-    config, err := pgxpool.ParseConfig(os.Getenv("ALLOYDB_URI"))
+    config, err := pgxpool.ParseConfig(os.Getenv("POSTGRES_URI"))
     if err != nil {
         return nil, err
     }
@@ -967,7 +995,7 @@ flowchart TD
     SIGN["Generate Signed URL\n(PUT, 15min expiry)"]
     GCS["Google Cloud Storage\nBucket: nexus-prod-storage"]
     CDN["Cloud CDN\nhttps://cdn.nexusainow.online/..."]
-    P["AlloyDB\navatar_url: CDN URL"]
+    P["Cloud SQL\navatar_url: CDN URL"]
 
     C -->|"POST /api/upload/signed-url"| API
     API --> SIGN
@@ -987,9 +1015,9 @@ All GCS objects are served through **Cloud CDN** with:
 
 ---
 
-## 15. Async Job Processing — Google Cloud Pub/Sub
+## 15. Async Job Processing — Redis Streams
 
-### Topic & Subscription Architecture
+### Stream & Consumer Group Architecture
 
 ```mermaid
 graph TB
@@ -999,79 +1027,163 @@ graph TB
         BILL["nexus-billing"]
     end
 
-    subgraph PubSub["Google Cloud Pub/Sub"]
-        T1["Topic: ai.inference\n(AI generation requests)"]
-        T2["Topic: embed.messages\n(Vector embedding jobs)"]
-        T3["Topic: notifications\n(Email / Push / Slack)"]
-        T4["Topic: webhooks\n(Enterprise event delivery)"]
-        T5["Topic: billing.events\n(Usage metering)"]
-        DLQ["Topic: deadletter\n(Failed jobs, 7d retention)"]
+    subgraph RedisStreams["Upstash Redis — Streams"]
+        S1["Stream: stream:ai.inference\n(AI generation requests)"]
+        S2["Stream: stream:embed.messages\n(Vector embedding jobs)"]
+        S3["Stream: stream:notifications\n(Email / Push / Slack)"]
+        S4["Stream: stream:webhooks\n(Enterprise event delivery)"]
+        S5["Stream: stream:billing.events\n(Usage metering)"]
+        DLQ["Stream: stream:deadletter\n(Failed jobs, 7d retention)"]
 
-        S1["Sub: ai-workers\n(push to nexus-ai-worker)"]
-        S2["Sub: embed-workers\n(push to nexus-ai-worker)"]
-        S3["Sub: notif-workers\n(push to nexus-ai-worker)"]
-        S4["Sub: webhook-workers\n(push to nexus-api)"]
-        S5["Sub: billing-workers\n(push to nexus-billing)"]
+        CG1["Consumer Group: ai-workers\n(nexus-ai-worker pods)"]
+        CG2["Consumer Group: embed-workers\n(nexus-ai-worker pods)"]
+        CG3["Consumer Group: notif-workers\n(nexus-ai-worker pods)"]
+        CG4["Consumer Group: webhook-workers\n(nexus-api pods)"]
+        CG5["Consumer Group: billing-workers\n(nexus-billing pods)"]
     end
 
     subgraph Workers["nexus-ai-worker Pods"]
-        W["Go Worker Pool\n• Concurrent goroutines\n• Ack/Nack per message\n• Max 3 retries → DLQ"]
+        W["Go Worker Pool\n• Concurrent goroutines\n• XACK per message\n• Max 3 retries → DLQ\n• XCLAIM for stuck messages"]
     end
 
-    SIO --> T1
-    API --> T1
-    SIO & API --> T2 & T3
+    SIO --> S1
+    API --> S1
+    SIO & API --> S2 & S3
 
-    T1 --> S1 --> W
-    T2 --> S2 --> W
-    T3 --> S3 --> W
+    S1 --> CG1 --> W
+    S2 --> CG2 --> W
+    S3 --> CG3 --> W
 
-    W -->|"Nack 3x"| DLQ
+    W -->|"3 failures"| DLQ
 ```
 
-### Go Pub/Sub Consumer
+### Go Redis Streams Consumer
 
 ```go
 // internal/worker/consumer.go
 func (w *Worker) Start(ctx context.Context) error {
-    sub := w.pubsubClient.Subscription("ai-workers")
-    sub.ReceiveSettings.MaxOutstandingMessages = 10
-    sub.ReceiveSettings.NumGoroutines = 5
+    consumerName := fmt.Sprintf("worker-%s", os.Getenv("HOSTNAME"))
 
-    return sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
-        var task AIInferenceTask
-        if err := json.Unmarshal(msg.Data, &task); err != nil {
-            log.Error("invalid message", "error", err)
-            msg.Ack() // Don't retry malformed messages
-            return
+    for {
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        default:
         }
 
-        attempt := msg.DeliveryAttempt
-        if err := w.processInference(ctx, task); err != nil {
-            if attempt != nil && *attempt >= 3 {
-                w.sendToDeadLetter(ctx, msg, err)
-                msg.Ack()
-            } else {
-                msg.Nack() // Pub/Sub will retry with backoff
+        // Block-read from stream with consumer group
+        streams, err := w.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+            Group:    "ai-workers",
+            Consumer: consumerName,
+            Streams:  []string{"stream:ai.inference", ">"},
+            Count:    10,
+            Block:    5 * time.Second,
+        }).Result()
+
+        if err == redis.Nil {
+            continue // No new messages, loop back
+        }
+        if err != nil {
+            log.Error("stream read error", "error", err)
+            time.Sleep(time.Second)
+            continue
+        }
+
+        for _, stream := range streams {
+            for _, msg := range stream.Messages {
+                go w.processMessage(ctx, msg)
             }
-            return
         }
-        msg.Ack()
-    })
+    }
+}
+
+func (w *Worker) processMessage(ctx context.Context, msg redis.XMessage) {
+    var task AIInferenceTask
+    if err := json.Unmarshal([]byte(msg.Values["payload"].(string)), &task); err != nil {
+        log.Error("invalid message", "id", msg.ID, "error", err)
+        w.rdb.XAck(ctx, "stream:ai.inference", "ai-workers", msg.ID)
+        return
+    }
+
+    if err := w.processInference(ctx, task); err != nil {
+        // Check retry count from message metadata
+        retries := w.getRetryCount(ctx, msg.ID)
+        if retries >= 3 {
+            w.sendToDeadLetter(ctx, msg, err)
+            w.rdb.XAck(ctx, "stream:ai.inference", "ai-workers", msg.ID)
+        }
+        // Don't ACK — message stays pending for XCLAIM recovery
+        return
+    }
+    w.rdb.XAck(ctx, "stream:ai.inference", "ai-workers", msg.ID)
 }
 ```
 
-### Why Pub/Sub over Kafka / Redis Streams?
+### Dead-Letter Recovery (XPENDING + XCLAIM)
 
-| Feature | Google Pub/Sub | Kafka | Redis Streams |
+Stuck or failed messages are recovered via a background goroutine:
+
+```go
+// internal/worker/recovery.go
+func (w *Worker) RecoverStuckMessages(ctx context.Context) {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            // Find messages pending for > 60 seconds
+            pending, _ := w.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
+                Stream: "stream:ai.inference",
+                Group:  "ai-workers",
+                Start:  "-",
+                End:    "+",
+                Count:  100,
+                Idle:   60 * time.Second,
+            }).Result()
+
+            for _, p := range pending {
+                if p.RetryCount >= 3 {
+                    // Move to dead-letter stream
+                    msgs, _ := w.rdb.XRangeN(ctx, "stream:ai.inference", p.ID, p.ID, 1).Result()
+                    if len(msgs) > 0 {
+                        w.rdb.XAdd(ctx, &redis.XAddArgs{
+                            Stream: "stream:deadletter",
+                            Values: msgs[0].Values,
+                        })
+                    }
+                    w.rdb.XAck(ctx, "stream:ai.inference", "ai-workers", p.ID)
+                } else {
+                    // Reclaim for this consumer
+                    w.rdb.XClaim(ctx, &redis.XClaimArgs{
+                        Stream:   "stream:ai.inference",
+                        Group:    "ai-workers",
+                        Consumer: fmt.Sprintf("worker-%s", os.Getenv("HOSTNAME")),
+                        MinIdle:  60 * time.Second,
+                        Messages: []string{p.ID},
+                    })
+                }
+            }
+        }
+    }
+}
+```
+
+### Why Redis Streams over Pub/Sub / Kafka?
+
+| Feature | Redis Streams | Google Pub/Sub | Kafka |
 |---|---|---|---|
-| Ops burden | Zero (fully managed) | High (ZooKeeper/KRaft) | Moderate |
-| Auto-scaling | ✅ Infinite | Manual partition tuning | Manual |
-| Dead-letter queues | ✅ Native | Manual topic setup | Manual |
-| Retry with backoff | ✅ Built-in | Consumer-side logic | Consumer-side logic |
-| GCP integration | ✅ Native IAM, logging | N/A | N/A |
-| Cost at moderate scale | Low (pay per message) | High (always-on brokers) | Moderate |
-| Delivery guarantee | At-least-once | At-least-once / Exactly-once | At-least-once |
+| Ops burden | Low (managed via Upstash) | Zero (fully managed) | High (ZooKeeper/KRaft) |
+| Consumer groups | ✅ Built-in (XREADGROUP) | ✅ Subscriptions | ✅ Consumer groups |
+| Message persistence | ✅ Persisted until trimmed | ✅ 7-day retention | ✅ Configurable |
+| Dead-letter handling | XPENDING + XCLAIM (manual) | ✅ Native DLQ | Manual topic setup |
+| Retry with backoff | Manual (via retry count) | ✅ Built-in | Consumer-side logic |
+| Unified with cache | ✅ Same Redis instance | ❌ Separate service | ❌ Separate cluster |
+| Cost | $0 free tier / pay-per-cmd | Pay per message | High (always-on brokers) |
+| Vendor lock-in | None (standard Redis) | GCP-only | None |
+| Delivery guarantee | At-least-once | At-least-once | At-least-once / Exactly-once |
 
 ---
 
@@ -1153,7 +1265,7 @@ graph TD
     end
 
     subgraph SecretSecurity["Secrets"]
-        SM["Secret Manager\n━━━━━━━━━\nStored:\n• ALLOYDB_URI\n• QDRANT_KEY\n• GEMINI_KEY\n• CLAUDE_KEY\n• OPENAI_KEY\n• DEEPSEEK_KEY\n• SMTP_KEYS\n• FIREBASE_SA"]
+        SM["Secret Manager\n━━━━━━━━━\nStored:\n• POSTGRES_URI\n• QDRANT_KEY\n• GEMINI_KEY\n• CLAUDE_KEY\n• OPENAI_KEY\n• DEEPSEEK_KEY\n• SMTP_KEYS\n• FIREBASE_SA\n• UPSTASH_REDIS_URL"]
     end
 
     subgraph ContainerSecurity["Container"]
@@ -1171,10 +1283,10 @@ As a multi-tenant SaaS serving enterprise customers, Nexus must comply with GDPR
 
 | Requirement | Implementation |
 |---|---|
-| **Right to Access** (Art. 15) | `GET /api/tenant/{id}/export` — generates a ZIP of all tenant data from AlloyDB + Qdrant + GCS |
-| **Right to Erasure** (Art. 17) | `DELETE /api/tenant/{id}` — cascading delete across AlloyDB, Qdrant vectors, GCS files, BigQuery rows, and Redis cache |
+| **Right to Access** (Art. 15) | `GET /api/tenant/{id}/export` — generates a ZIP of all tenant data from Cloud SQL + Qdrant + GCS |
+| **Right to Erasure** (Art. 17) | `DELETE /api/tenant/{id}` — cascading delete across Cloud SQL, Qdrant vectors, GCS files, BigQuery rows, and Redis cache |
 | **Right to Portability** (Art. 20) | Export in JSON/CSV format via `nexus-api` |
-| **Data Residency** | Deploy tenant data in region-specific AlloyDB clusters and GCS buckets (e.g., `eu-west1` for EU tenants) |
+| **Data Residency** | Deploy tenant data in region-specific Cloud SQL instances and GCS buckets (e.g., `eu-west1` for EU tenants) |
 | **Data Processing Agreement** | Template DPA available for enterprise tenants |
 | **Consent Management** | Firebase Auth handles consent for OAuth; custom consent tracking in `audit_logs` |
 | **Breach Notification** | Cloud Error Reporting + PagerDuty alert within 72 hours |
@@ -1186,7 +1298,7 @@ As a multi-tenant SaaS serving enterprise customers, Nexus must comply with GDPR
 flowchart TD
     REQ["DELETE /api/tenant/{id}"] --> AUTH["Verify: Owner role"]
     AUTH --> GRACE["Set 30-day grace period\n(reversible)"]
-    GRACE --> PDB["Delete from AlloyDB\n• users, workspaces, groups\n• chats, messages\n• audit_logs"]
+    GRACE --> PDB["Delete from Cloud SQL\n• users, workspaces, groups\n• chats, messages\n• audit_logs"]
     GRACE --> QDRANT["Delete from Qdrant\nfilter: tenant_id={id}"]
     GRACE --> GCS_DEL["Delete from GCS\ngs://bucket/{tenant_id}/"]
     GRACE --> BQ_DEL["Delete from BigQuery\nWHERE tenant_id={id}"]
@@ -1225,11 +1337,11 @@ func SecurityHeaders() gin.HandlerFunc {
 
 | Component | Backup Method | Frequency | Retention | RTO | RPO |
 |---|---|---|---|---|---|
-| **AlloyDB** | Continuous backup + point-in-time recovery | Continuous | 14 days PITR, 30 days snapshots | 1 hour | 1 minute |
+| **Cloud SQL (PostgreSQL)** | Continuous backup + point-in-time recovery | Continuous | 14 days PITR, 30 days snapshots | 1 hour | 1 minute |
 | **Qdrant Cloud** | Scheduled snapshots | Every 6 hours | 7 days | 2 hours | 6 hours |
 | **Google Cloud Storage** | Object versioning + multi-region replication | Continuous | 30 days versioning | Near-instant | 0 (multi-region) |
 | **BigQuery** | Time-travel queries + dataset snapshots | Continuous | 7 days time-travel | Near-instant | 0 |
-| **Memorystore Redis** | RDB snapshots | Every 12 hours | 3 days | 30 minutes | 12 hours |
+| **Upstash Redis** | Automatic persistence (Upstash-managed) | Continuous | Managed by Upstash | ~5 minutes | ~1 minute |
 | **Secret Manager** | Version history | Every change | All versions | Near-instant | 0 |
 
 ### Disaster Recovery Plan
@@ -1237,9 +1349,9 @@ func SecurityHeaders() gin.HandlerFunc {
 ```mermaid
 flowchart TD
     DETECT["Incident Detected\n(Cloud Monitoring alert)"] --> ASSESS{"Severity?"}
-    ASSESS -->|P1: Full outage| FAILOVER["Failover to DR region\n1. Promote AlloyDB read pool replica\n2. Re-point DNS\n3. Scale up GKE in DR region"]
+    ASSESS -->|P1: Full outage| FAILOVER["Failover to DR region\n1. Promote Cloud SQL read replica\n2. Re-point DNS\n3. Scale up GKE in DR region"]
     ASSESS -->|P2: Partial outage| ISOLATE["Isolate failed service\n1. Circuit breaker activates\n2. Scale healthy pods\n3. Route around failure"]
-    ASSESS -->|P3: Data corruption| RESTORE["Restore from backup\n1. AlloyDB PITR\n2. Qdrant snapshot restore\n3. Verify data integrity"]
+    ASSESS -->|P3: Data corruption| RESTORE["Restore from backup\n1. Cloud SQL PITR\n2. Qdrant snapshot restore\n3. Verify data integrity"]
     FAILOVER --> VERIFY["Verify DR environment"]
     ISOLATE --> VERIFY
     RESTORE --> VERIFY
@@ -1251,7 +1363,7 @@ flowchart TD
 | Scenario | RTO Target | RPO Target |
 |---|---|---|
 | Single service failure | < 5 minutes (HPA auto-heal) | 0 |
-| Full region outage | < 1 hour | < 1 minute (AlloyDB PITR) |
+| Full region outage | < 1 hour | < 1 minute (Cloud SQL PITR) |
 | Database corruption | < 2 hours | < 1 minute |
 | Accidental data deletion | < 30 minutes | < 1 minute |
 
@@ -1289,8 +1401,8 @@ graph TB
 | Request latency (p95) | `nexus-api` | > 500ms |
 | Active WebSocket connections | `nexus-socket` | > 10,000 per pod |
 | AI inference latency | `nexus-ai-worker` | > 15s |
-| Pub/Sub undelivered messages | Cloud Monitoring | > 100 for 5min |
-| Cache hit rate | Memorystore | < 70% |
+| Redis Streams pending messages | Cloud Monitoring | > 100 for 5min |
+| Cache hit rate | Upstash Redis | < 70% |
 | Error rate (5xx) | All services | > 1% for 5min |
 | Qdrant search latency | `nexus-rag` | > 100ms |
 | LLM token cost per hour | `nexus-ai-gateway` | > $50/hr |
@@ -1436,11 +1548,6 @@ services:
     image: qdrant/qdrant:latest
     ports: ['6333:6333', '6334:6334']
 
-  pubsub-emulator:
-    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
-    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
-    ports: ['8085:8085']
-
   # ── Services ──
   nexus-api:
     build: ./services/nexus-api
@@ -1468,13 +1575,18 @@ services:
   nexus-ai-worker:
     build: ./services/nexus-ai-worker
     env_file: .env.local
-    depends_on: [redis, postgres, pubsub-emulator, nexus-rag, nexus-ai-gateway]
+    depends_on: [redis, postgres, nexus-rag, nexus-ai-gateway, nexus-compute]
 
   nexus-billing:
     build: ./services/nexus-billing
     ports: ['8082:8082']
     env_file: .env.local
     depends_on: [redis, postgres]
+
+  nexus-compute:
+    build: ./services/nexus-compute
+    ports: ['50052:50052']
+    env_file: .env.local
 
   # ── Frontend ──
   client:
@@ -1516,13 +1628,13 @@ graph TB
                 D_RAG["nexus-rag (Python)\n(2-6 pods, HPA)"]
                 D_AIGW["nexus-ai-gateway (Go)\n(2-8 pods, HPA)"]
                 D_WRK["nexus-ai-worker (Go)\n(2-8 pods, HPA)"]
+                D_COMP["nexus-compute (C++)\n(2-6 pods, HPA)"]
             end
         end
 
         subgraph Managed["GCP Managed Services"]
-            PDB["AlloyDB Cluster\n(Primary + Read Pool)"]
-            MEM["Memorystore Redis\n(HA, 2 replicas)"]
-            PS["Cloud Pub/Sub\n(4 topics, 4 subs, 1 DLQ)"]
+            PDB["Cloud SQL PostgreSQL\n(Primary + Read Replica)"]
+            PS["Upstash Redis\n(Cache + Streams MQ)"]
             GCS["Cloud Storage\n(multi-region bucket)"]
             SM["Secret Manager"]
             LOGS["Cloud Logging / Monitoring\n/ Trace / Error Reporting"]
@@ -1550,7 +1662,9 @@ All secrets are stored in **Google Secret Manager** and mounted into pods at sta
 
 | Secret Name | Service(s) | Description |
 |---|---|---|
-| `ALLOYDB_URI` | All | AlloyDB connection string |
+| `POSTGRES_URI` | All | Cloud SQL PostgreSQL connection string |
+| `UPSTASH_REDIS_URL` | All | Upstash Redis connection URL |
+| `UPSTASH_REDIS_TOKEN` | All | Upstash Redis REST token |
 | `QDRANT_URL` | `nexus-rag` | Qdrant Cloud endpoint |
 | `QDRANT_API_KEY` | `nexus-rag` | Qdrant auth key |
 | `GEMINI_API_KEY` | `nexus-ai-gateway` | Google Gemini key |
@@ -1558,7 +1672,6 @@ All secrets are stored in **Google Secret Manager** and mounted into pods at sta
 | `OPENAI_API_KEY` | `nexus-ai-gateway` | OpenAI key |
 | `DEEPSEEK_API_KEY` | `nexus-ai-gateway` | DeepSeek key |
 | `FIREBASE_SA_JSON` | `nexus-api`, `nexus-socket` | Firebase Admin SDK service account |
-| `REDIS_URL` | All | Memorystore connection string |
 | `GCS_BUCKET` | `nexus-api` | Cloud Storage bucket name |
 | `STRIPE_SECRET_KEY` | `nexus-billing` | Stripe payment processing |
 | `SMTP_HOST` | `nexus-ai-worker` | Email notification credentials |
@@ -1577,12 +1690,12 @@ AI_ENABLED=true
 MAX_CONTEXT_TOKENS=4096
 MAX_UPLOAD_SIZE_MB=50
 
-# Pub/Sub topics
-PUBSUB_TOPIC_AI=ai.inference
-PUBSUB_TOPIC_EMBED=embed.messages
-PUBSUB_TOPIC_NOTIF=notifications
-PUBSUB_TOPIC_BILLING=billing.events
-PUBSUB_TOPIC_DLQ=deadletter
+# Redis Streams (Message Queue)
+REDIS_STREAM_AI=stream:ai.inference
+REDIS_STREAM_EMBED=stream:embed.messages
+REDIS_STREAM_NOTIF=stream:notifications
+REDIS_STREAM_BILLING=stream:billing.events
+REDIS_STREAM_DLQ=stream:deadletter
 
 # Redis
 REDIS_MAX_POOL=50
@@ -1600,9 +1713,8 @@ COOKIE_SECURE=true
 
 | Service | Tier / Spec | Estimated Monthly Cost |
 |---|---|---|
-| **GKE Autopilot** | ~20 pods average | $400 – $600 |
-| **Memorystore Redis** | Standard, 5GB, HA | $150 – $200 |
-| **Cloud Pub/Sub** | ~5M messages/month | $10 – $20 |
+| **GKE Autopilot** | ~24 pods average (incl. nexus-compute) | $500 – $750 |
+| **Upstash Redis** | Free tier (256 MB) → Pay-as-you-go at scale | $0 – $50 |
 | **Cloud Storage** | 100GB, multi-region | $5 – $10 |
 | **Cloud CDN** | 500GB egress | $40 – $60 |
 | **Cloud Armor** | Standard tier | $5 + $1/rule |
@@ -1610,13 +1722,13 @@ COOKIE_SECURE=true
 | **Cloud Trace** | First 2.5M spans free | $0 – $10 |
 | **Secret Manager** | <100 secrets, <10K accesses | $1 |
 | **BigQuery** | 10GB storage, 1TB queries | $5 – $15 |
-| **AlloyDB** | Standard 2 vCPU, 16GB | $150 – $300 |
+| **Cloud SQL (PostgreSQL)** | Standard 2 vCPU, 16GB | $150 – $300 |
 | **Qdrant Cloud** | 2 nodes, 4GB RAM each | $100 – $200 |
 | **Firebase Auth** | Free tier (50K MAU) | $0 |
 | **LLM APIs** | Variable (token-based) | $200 – $2,000 |
-| | **Total** | **~$1,500 – $4,000/mo** |
+| | **Total** | **~$1,100 – $3,500/mo** |
 
-> **Note**: LLM API costs are the most variable. The AI Gateway's model routing and response caching can reduce these by 30-50%.
+> **Note**: LLM API costs are the most variable. The AI Gateway's model routing and response caching can reduce these by 30-50%. Using Upstash Redis free tier for dev/staging saves ~$150-200/mo vs Memorystore.
 
 ---
 
@@ -1635,13 +1747,13 @@ gantt
     section Phase A — Auth Migration
     Export existing users from MongoDB       :m1, 2026-07-01, 2d
     Import users into Firebase Auth (batch)  :m2, 2026-07-03, 1d
-    Map firebase_uid back to users in AlloyDB   :m3, 2026-07-04, 1d
+    Map firebase_uid back to users in Cloud SQL   :m3, 2026-07-04, 1d
     Verify auth flow end-to-end              :m4, 2026-07-05, 1d
 
     section Phase B — Schema Migration
     Create default tenant and workspace      :m5, 2026-07-07, 1d
     Backfill tenant_id and workspace_id      :m6, 2026-07-08, 2d
-    Create AlloyDB schema, RLS, and indexes               :m7, 2026-07-10, 1d
+    Create Cloud SQL schema, RLS, and indexes               :m7, 2026-07-10, 1d
     Verify data integrity                    :m8, 2026-07-11, 1d
 
     section Phase C — Vector Migration
@@ -1653,7 +1765,7 @@ gantt
 
     section Phase D — Storage Migration
     Copy avatars from local FS to GCS        :m14, 2026-07-22, 1d
-    Update avatar_url in AlloyDB to CDN URLs :m15, 2026-07-23, 1d
+    Update avatar_url in Cloud SQL to CDN URLs :m15, 2026-07-23, 1d
 ```
 
 ### Auth Migration Script (Conceptual)
@@ -1699,7 +1811,7 @@ for (const coll of ["messages", "groups", "chats", "audit_logs"]) {
 ### Rollback Plan
 
 Each migration phase is independently reversible:
-- **Auth**: Firebase users can be deleted in batch; AlloyDB migration can be repeated.
+- **Auth**: Firebase users can be deleted in batch; Cloud SQL migration can be repeated.
 - **Schema**: `tenant_id`/`workspace_id` fields are additive; old queries still work.
 - **Vectors**: Qdrant cluster can be destroyed; old vector store indexes are untouched until Phase C final step.
 - **Storage**: Original local files are not deleted until CDN URLs are verified.
@@ -1722,7 +1834,7 @@ gantt
     Python scaffolding (nexus-rag)          :crit, p1a2, 2026-06-23, 2d
     Proto definitions + Buf setup           :crit, p1a3, 2026-06-24, 2d
     Firebase Auth integration               :crit, p1b, 2026-06-25, 3d
-    Memorystore Redis setup                 :crit, p1c, 2026-06-26, 2d
+    Upstash Redis setup                     :crit, p1c, 2026-06-26, 2d
     GCS file storage migration              :crit, p1d, 2026-06-27, 2d
     Security headers + Cloud Armor          :p1e, 2026-06-29, 2d
     Secret Manager integration              :p1f, 2026-06-29, 1d
@@ -1739,36 +1851,45 @@ gantt
     nexus-ai-gateway (Go — multi-model)     :crit, p3a, 2026-07-21, 4d
     nexus-rag (Python — BGE + Qdrant)       :crit, p3b, 2026-07-21, 5d
     AI streaming architecture               :crit, p3b2, 2026-07-23, 3d
-    nexus-ai-worker (Go — Pub/Sub consumer) :crit, p3c, 2026-07-24, 4d
+    nexus-ai-worker (Go — Redis Streams)    :crit, p3c, 2026-07-24, 4d
     Qdrant Cloud + vector migration         :p3d, 2026-07-26, 5d
 
+    section Phase 3.5 — C++ Compute Service (Week 6-7)
+    nexus-compute C++ scaffolding (CMake)   :crit, p35a, 2026-07-28, 3d
+    gRPC server + proto definitions         :crit, p35b, 2026-07-28, 2d
+    Arena allocator + memory pool impl      :crit, p35c, 2026-07-30, 4d
+    Mmap file processing pipeline           :p35d, 2026-08-01, 3d
+    Zero-copy Flatbuffers integration       :p35e, 2026-08-01, 2d
+    In-memory index (B+ tree / hash map)    :p35f, 2026-08-03, 3d
+    Integration testing with Go/Python      :p35g, 2026-08-04, 2d
+
     section Phase 4 — Billing & Production (Week 7-8)
-    nexus-billing (Go — metering/invoices)  :crit, p4a0, 2026-08-04, 4d
-    GCP Observability (Logging/Trace/Mon)   :p4a, 2026-08-04, 3d
-    CI/CD pipeline (Actions + GKE Autopilot):p4b, 2026-08-04, 3d
-    Rate limiting + circuit breakers        :p4c, 2026-08-07, 2d
-    RBAC enforcement                        :p4d, 2026-08-07, 2d
-    GDPR compliance (export/delete)         :p4d2, 2026-08-08, 3d
-    Load testing + canary deployment        :p4e, 2026-08-10, 3d
-    BigQuery analytics pipeline             :p4f, 2026-08-12, 2d
-    Webhook system                          :p4g, 2026-08-13, 2d
+    nexus-billing (Go — metering/invoices)  :crit, p4a0, 2026-08-11, 4d
+    GCP Observability (Logging/Trace/Mon)   :p4a, 2026-08-11, 3d
+    CI/CD pipeline (Actions + GKE Autopilot):p4b, 2026-08-11, 3d
+    Rate limiting + circuit breakers        :p4c, 2026-08-14, 2d
+    RBAC enforcement                        :p4d, 2026-08-14, 2d
+    GDPR compliance (export/delete)         :p4d2, 2026-08-15, 3d
+    Load testing + canary deployment        :p4e, 2026-08-17, 3d
+    BigQuery analytics pipeline             :p4f, 2026-08-19, 2d
+    Webhook system                          :p4g, 2026-08-20, 2d
 ```
 
 ### Quick Reference — What Replaces What
 
 | Old (Current) | New (Production) |
 |---|---|
-| Python / FastAPI monolith | 4 Go + 1 Node.js + 1 Python microservices |
+| Python / FastAPI monolith | 4 Go + 1 Node.js + 1 Python + 1 C++ microservices |
 | Custom JWT + localStorage | Firebase Authentication |
 | Direct Gemini API calls | nexus-ai-gateway (multi-model) |
 | In-process SentenceTransformers | nexus-rag — Python (BGE-M3 + BGE-Reranker) |
 | Full AI response after delay | Token-by-token streaming to client |
-| MongoDB Atlas (NoSQL) | AlloyDB (PostgreSQL) |\n| MongoDB Atlas Vector Search | Qdrant Cloud |
+| MongoDB Atlas (NoSQL) | Cloud SQL (PostgreSQL 16) |\n| MongoDB Atlas Vector Search | Qdrant Cloud |
 | Go Socket.IO (unmaintained) | Node.js Socket.IO (official, battle-tested) |
-| In-memory Socket.IO adapter | Memorystore Redis adapter |
+| In-memory Socket.IO adapter | Upstash Redis adapter |
 | Local filesystem | Google Cloud Storage + Cloud CDN |
 | In-memory rate limiter | Redis sliding window |
-| Synchronous AI execution | Cloud Pub/Sub async workers |
+| Synchronous AI execution | Redis Streams async workers |
 | `print()` logging | Cloud Logging + Cloud Trace |
 | No WAF | Cloud Armor |
 | `.env` files | Secret Manager |
@@ -1781,7 +1902,344 @@ gantt
 | No backups strategy | Automated backups with defined RTO/RPO |
 | No local dev environment | Docker Compose one-command setup |
 | No API contracts | Shared gRPC proto definitions (Buf) |
+| No memory-optimized service | nexus-compute (C++) — custom allocators, mmap, zero-copy |
+| GCP Memorystore Redis | Upstash Redis (free tier + serverless scaling) |
+| Google Cloud Pub/Sub | Redis Streams (unified with cache layer) |
 
 ---
 
-*Generated: 2026-06-22 | Stack: Go · Node.js · Python · GKE Autopilot · Firebase · Cloud Pub/Sub · Memorystore Redis · AlloyDB · Qdrant Cloud · Cloud Storage · Cloud Armor · Secret Manager · BigQuery*
+## 27. C++ Integration Plan — `nexus-compute`
+
+### Purpose
+
+`nexus-compute` is a **C++20 microservice** designed for workloads requiring **extensive memory management** — where Go's garbage collector pauses and Python's memory overhead are unacceptable. It runs as a gRPC server called by other services for memory-intensive operations.
+
+### Why C++ for Memory Management?
+
+| Concern | Go / Python | C++ |
+|---|---|---|
+| **Memory allocation** | GC-managed, unpredictable pauses (Go: ~1-10ms) | Manual / RAII, zero pauses |
+| **Custom allocators** | Not possible | Arena, pool, slab, buddy allocators |
+| **Memory-mapped I/O** | Limited (`mmap` via syscall) | Native `mmap`, `madvise`, `mlock` |
+| **Zero-copy buffers** | Requires `unsafe` (Go) or `ctypes` (Python) | Native pointer arithmetic, Flatbuffers |
+| **Memory footprint** | Go: ~10-50 MB base; Python: ~50-200 MB | ~2-5 MB base |
+| **Cache-line optimization** | No control | `alignas`, `__attribute__((aligned))` |
+| **Lock-free structures** | `sync.Map` (limited) | `std::atomic`, CAS operations, custom lock-free queues |
+
+### Architecture
+
+```mermaid
+graph TB
+    subgraph Callers["Service Callers"]
+        API["nexus-api (Go)"]
+        WRK["nexus-ai-worker (Go)"]
+        RAG["nexus-rag (Python)"]
+    end
+
+    subgraph NexusCompute["nexus-compute (C++20)"]
+        GRPC["gRPC Server\n(Port 50052)"]
+        
+        subgraph MemMgmt["Memory Management Layer"]
+            ARENA["Arena Allocator\n• Per-request allocation\n• Bulk free on completion\n• Zero fragmentation"]
+            POOL["Memory Pool\n• Per-tenant pools\n• Pre-allocated slabs\n• O(1) alloc/free"]
+            MMAP["Memory-Mapped I/O\n• Large file processing\n• OS page cache leverage\n• Lazy loading"]
+        end
+        
+        subgraph DataStructures["In-Memory Data Structures"]
+            IDX["Lock-Free Hash Map\n• Concurrent reads\n• Per-tenant message index\n• CAS-based updates"]
+            BTREE["B+ Tree Index\n• Range queries\n• Sorted message access\n• Cache-friendly layout"]
+            RING["Ring Buffers\n• WebSocket stream mgmt\n• Fixed memory footprint\n• Lock-free SPSC"]
+        end
+        
+        subgraph Processing["Processing Pipelines"]
+            ZCOPY["Zero-Copy Serialization\n• Flatbuffers encoding\n• No alloc on decode\n• Direct memory access"]
+            FPROC["File Processor\n• PDF text extraction\n• Image thumbnailing\n• Controlled memory budget"]
+        end
+    end
+
+    API -->|gRPC| GRPC
+    WRK -->|gRPC| GRPC
+    RAG -->|gRPC| GRPC
+    
+    GRPC --> MemMgmt
+    MemMgmt --> DataStructures
+    MemMgmt --> Processing
+```
+
+### gRPC Proto Definition
+
+```protobuf
+// proto/compute/compute.proto
+syntax = "proto3";
+package nexus.compute;
+
+service ComputeService {
+  // Process a large file with controlled memory budget
+  rpc ProcessFile (ProcessFileRequest) returns (ProcessFileResponse);
+  
+  // Batch-process messages with arena allocation (zero-copy)
+  rpc BatchProcessMessages (BatchMessageRequest) returns (BatchMessageResponse);
+  
+  // Query the in-memory tenant index
+  rpc QueryIndex (IndexQueryRequest) returns (IndexQueryResponse);
+  
+  // Stream-process binary payloads (e.g., thumbnails)
+  rpc StreamProcess (stream BinaryChunk) returns (ProcessedResult);
+}
+
+message ProcessFileRequest {
+  string tenant_id = 1;
+  string file_url = 2;           // GCS signed URL
+  string operation = 3;          // "extract_text", "thumbnail", "analyze"
+  int64 memory_budget_bytes = 4; // Max memory to use (e.g., 256MB)
+}
+
+message ProcessFileResponse {
+  bytes result = 1;
+  int64 peak_memory_bytes = 2;
+  double processing_time_ms = 3;
+}
+
+message BatchMessageRequest {
+  string tenant_id = 1;
+  repeated MessagePayload messages = 2;
+  string operation = 3;          // "index", "serialize", "transform"
+}
+
+message MessagePayload {
+  string id = 1;
+  string content = 2;
+  int64 timestamp = 3;
+  map<string, string> metadata = 4;
+}
+
+message BatchMessageResponse {
+  int32 processed_count = 1;
+  int64 peak_memory_bytes = 2;
+  double processing_time_ms = 3;
+}
+
+message IndexQueryRequest {
+  string tenant_id = 1;
+  string query = 2;
+  int64 time_range_start = 3;
+  int64 time_range_end = 4;
+  int32 limit = 5;
+}
+
+message IndexQueryResponse {
+  repeated MessagePayload results = 1;
+  int32 total_matches = 2;
+  double query_time_ms = 3;
+}
+
+message BinaryChunk {
+  bytes data = 1;
+  bool is_final = 2;
+}
+
+message ProcessedResult {
+  bytes output = 1;
+  string content_type = 2;
+  int64 peak_memory_bytes = 3;
+}
+```
+
+### Project Structure
+
+```text
+services/nexus-compute/
+├── CMakeLists.txt              (Build system)
+├── vcpkg.json                  (Dependency manifest)
+├── Dockerfile                  (Multi-stage build)
+├── include/
+│   ├── allocators/
+│   │   ├── arena_allocator.h   (Per-request arena)
+│   │   ├── pool_allocator.h    (Per-tenant memory pool)
+│   │   └── slab_allocator.h    (Fixed-size block allocator)
+│   ├── containers/
+│   │   ├── lockfree_hashmap.h  (CAS-based concurrent map)
+│   │   ├── bplus_tree.h        (Cache-friendly B+ tree)
+│   │   └── ring_buffer.h       (SPSC lock-free ring buffer)
+│   ├── processing/
+│   │   ├── file_processor.h    (Mmap-based file processing)
+│   │   └── flatbuf_codec.h     (Zero-copy serialization)
+│   └── server/
+│       └── compute_server.h    (gRPC service implementation)
+└── src/
+    ├── main.cpp                (Entry point, gRPC server startup)
+    ├── allocators/
+    │   ├── arena_allocator.cpp
+    │   ├── pool_allocator.cpp
+    │   └── slab_allocator.cpp
+    ├── containers/
+    │   ├── lockfree_hashmap.cpp
+    │   └── bplus_tree.cpp
+    ├── processing/
+    │   ├── file_processor.cpp
+    │   └── flatbuf_codec.cpp
+    └── server/
+        └── compute_server.cpp
+```
+
+### Key Memory Patterns
+
+#### Arena Allocator (Per-Request)
+```cpp
+// include/allocators/arena_allocator.h
+class ArenaAllocator {
+public:
+    explicit ArenaAllocator(size_t block_size = 1024 * 1024) // 1MB blocks
+        : block_size_(block_size) {
+        allocate_block();
+    }
+    
+    // O(1) allocation — just bump a pointer
+    void* allocate(size_t size, size_t alignment = alignof(std::max_align_t)) {
+        size_t padding = align_up(current_offset_, alignment) - current_offset_;
+        if (current_offset_ + padding + size > block_size_) {
+            allocate_block();  // Get a new block
+            padding = 0;
+        }
+        void* ptr = current_block_ + current_offset_ + padding;
+        current_offset_ += padding + size;
+        return ptr;
+    }
+    
+    // No individual free — entire arena is freed at once (on request completion)
+    ~ArenaAllocator() {
+        for (auto* block : blocks_) {
+            ::operator delete(block);
+        }
+    }
+    
+    size_t bytes_allocated() const { return total_allocated_; }
+
+private:
+    void allocate_block() {
+        auto* block = static_cast<char*>(::operator new(block_size_));
+        blocks_.push_back(block);
+        current_block_ = block;
+        current_offset_ = 0;
+        total_allocated_ += block_size_;
+    }
+    
+    static size_t align_up(size_t offset, size_t alignment) {
+        return (offset + alignment - 1) & ~(alignment - 1);
+    }
+    
+    size_t block_size_;
+    std::vector<char*> blocks_;
+    char* current_block_ = nullptr;
+    size_t current_offset_ = 0;
+    size_t total_allocated_ = 0;
+};
+```
+
+#### Memory-Mapped File Processing
+```cpp
+// include/processing/file_processor.h
+class MmapFileProcessor {
+public:
+    ProcessResult process(const std::string& file_path, int64_t memory_budget) {
+        int fd = open(file_path.c_str(), O_RDONLY);
+        struct stat st;
+        fstat(fd, &st);
+        
+        // Memory-map the file — OS handles paging, no heap allocation
+        void* mapped = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        madvise(mapped, st.st_size, MADV_SEQUENTIAL);  // Hint: sequential access
+        
+        // Process in chunks within memory budget
+        ArenaAllocator arena(memory_budget);
+        auto result = extract_content(
+            static_cast<const char*>(mapped), st.st_size, arena
+        );
+        
+        munmap(mapped, st.st_size);
+        close(fd);
+        return result;
+    }
+};
+```
+
+### Dockerfile (Multi-Stage Build)
+
+```dockerfile
+# ── Build stage ──
+FROM ubuntu:24.04 AS builder
+RUN apt-get update && apt-get install -y \
+    build-essential cmake git pkg-config \
+    libgrpc++-dev protobuf-compiler-grpc \
+    libjemalloc-dev libflatbuffers-dev
+WORKDIR /app
+COPY vcpkg.json CMakeLists.txt ./
+COPY include/ include/
+COPY src/ src/
+COPY proto/ proto/
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS="-O3 -march=native -flto" && \
+    cmake --build build --parallel $(nproc)
+
+# ── Production stage ──
+FROM ubuntu:24.04-minimal
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjemalloc2 libgrpc++1 && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/build/nexus-compute /nexus-compute
+# Use jemalloc for all allocations
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+USER 1000:1000
+EXPOSE 50052
+ENTRYPOINT ["/nexus-compute"]
+```
+
+### Integration Points
+
+| Caller | RPC | Use Case |
+|---|---|---|
+| `nexus-api` | `ProcessFile` | Thumbnail generation for uploaded images; PDF text extraction for document search |
+| `nexus-api` | `BatchProcessMessages` | Bulk message export with zero-copy serialization (GDPR data export) |
+| `nexus-ai-worker` | `BatchProcessMessages` | Index new messages into per-tenant in-memory B+ tree for fast retrieval |
+| `nexus-ai-worker` | `QueryIndex` | Sub-millisecond message lookup by time range before sending to RAG pipeline |
+| `nexus-rag` | `StreamProcess` | Process large document chunks with controlled memory budget before embedding |
+
+### Fallback Strategy
+
+If `nexus-compute` is unavailable (crash, deployment, scaling), callers fall back to native implementations:
+
+```go
+// internal/compute/client.go (in nexus-api or nexus-ai-worker)
+func (c *ComputeClient) ProcessFileWithFallback(ctx context.Context, req *pb.ProcessFileRequest) (*pb.ProcessFileResponse, error) {
+    // Try C++ service first
+    resp, err := c.grpcClient.ProcessFile(ctx, req)
+    if err == nil {
+        return resp, nil
+    }
+    
+    // Circuit breaker tripped or service unavailable — fallback to Go
+    log.Warn("nexus-compute unavailable, using Go fallback", "error", err)
+    return c.goFallback.ProcessFile(ctx, req)  // Slower but functional
+}
+```
+
+**Fallback tradeoffs**: Go/Python fallbacks work but with:
+- ~10-50x higher memory usage (GC overhead, no custom allocators)
+- GC pauses (1-10ms in Go, stop-the-world in Python)
+- No memory-mapped I/O (full file loads into heap)
+- No lock-free data structures (mutex-based instead)
+
+### Resource Budget
+
+| Metric | Target |
+|---|---|
+| Base memory | ~5 MB (no GC, no runtime) |
+| Per-request arena | 1-64 MB (configurable, freed on completion) |
+| Per-tenant index | ~100 MB (B+ tree + hash map) |
+| File processing | Bounded by `memory_budget_bytes` in request |
+| Peak memory per pod | 1-4 GB (controlled, no leaks via RAII) |
+| Cold start | < 500ms (compiled binary, no interpreter) |
+
+---
+
+*Generated: 2026-08-01 | Stack: Go · Node.js · Python · C++ · GKE Autopilot · Firebase · Redis Streams · Upstash Redis · Cloud SQL PostgreSQL · Qdrant Cloud · Cloud Storage · Cloud Armor · Secret Manager · BigQuery*

@@ -1,45 +1,55 @@
 package middleware
 
 import (
-	"context"
-	"log"
 	"net/http"
 	"strings"
+	"time"
 
-	firebase "firebase.google.com/go/v4"
-	"firebase.google.com/go/v4/auth"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-var firebaseAuth *auth.Client
-
-// InitFirebase initializes the Firebase Admin SDK.
-func InitFirebase(ctx context.Context, projectID string) {
-	if projectID == "" {
-		log.Println("[auth] FIREBASE_PROJECT_ID not set — running in dev mode (auth disabled)")
-		return
-	}
-
-	conf := &firebase.Config{ProjectID: projectID}
-	app, err := firebase.NewApp(ctx, conf)
-	if err != nil {
-		log.Printf("[auth] Firebase init failed — running without auth: %v", err)
-		return
-	}
-
-	client, err := app.Auth(ctx)
-	if err != nil {
-		log.Printf("[auth] Firebase auth client failed: %v", err)
-		return
-	}
-
-	firebaseAuth = client
-	log.Println("[auth] Firebase Admin initialized")
+// JWTClaims holds the custom claims in our JWT tokens.
+type JWTClaims struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	jwt.RegisteredClaims
 }
 
-// FirebaseAuthMiddleware verifies Firebase ID tokens from the Authorization header.
-// On success, sets "firebase_uid", "user_email", "user_name" in the Gin context.
-func FirebaseAuthMiddleware() gin.HandlerFunc {
+// GenerateJWT creates a signed JWT token for a given user.
+func GenerateJWT(userID, email, secret string, expiry time.Duration) (string, error) {
+	claims := JWTClaims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "nexus-api",
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+// VerifyJWT parses and validates a JWT token string.
+func VerifyJWT(tokenStr, secret string) (*JWTClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &JWTClaims{}, func(t *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(*JWTClaims)
+	if !ok || !token.Valid {
+		return nil, jwt.ErrTokenNotValidYet
+	}
+	return claims, nil
+}
+
+// JWTAuthMiddleware verifies JWT tokens from the Authorization header.
+// On success, sets "user_id" and "user_email" in the Gin context.
+func JWTAuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -49,34 +59,18 @@ func FirebaseAuthMiddleware() gin.HandlerFunc {
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == authHeader {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format, expected: Bearer <token>"})
 			return
 		}
 
-		// Dev mode: skip Firebase if not initialized
-		if firebaseAuth == nil {
-			log.Println("[auth] Dev mode — skipping token verification")
-			c.Set("firebase_uid", "dev-user")
-			c.Set("user_email", "dev@nexus.local")
-			c.Set("user_name", "Dev User")
-			c.Next()
-			return
-		}
-
-		decoded, err := firebaseAuth.VerifyIDToken(c.Request.Context(), token)
+		claims, err := VerifyJWT(token, jwtSecret)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
 
-		c.Set("firebase_uid", decoded.UID)
-		if email, ok := decoded.Claims["email"].(string); ok {
-			c.Set("user_email", email)
-		}
-		if name, ok := decoded.Claims["name"].(string); ok {
-			c.Set("user_name", name)
-		}
-
+		c.Set("user_id", claims.UserID)
+		c.Set("user_email", claims.Email)
 		c.Next()
 	}
 }
