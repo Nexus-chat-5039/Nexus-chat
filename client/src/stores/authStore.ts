@@ -1,6 +1,4 @@
 import { create } from "zustand";
-import { auth } from "../firebase/config";
-import { onAuthStateChanged } from "firebase/auth";
 import { authService } from "../services/auth/authService";
 
 export interface AuthUser {
@@ -41,33 +39,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   getToken: () => get().token,
 }));
 
-if (auth) {
-  onAuthStateChanged(auth, async (firebaseUser) => {
-    if (firebaseUser) {
-      try {
-        // 1. Get Firebase ID token
-        const idToken = await firebaseUser.getIdToken();
-        
-        // 2. Call our backend to get the session token
-        const { access_token } = await authService.createSession(idToken);
-        
-        // 3. Set token in store
-        const email = firebaseUser.email || "";
-        const username = firebaseUser.displayName || parseUsername(email);
-        useAuthStore.getState().login(access_token, email, username);
-      } catch (error) {
-        console.error("Failed to establish session with backend:", error);
-        useAuthStore.getState().logout();
-      }
-    } else {
-      // User signed out of Firebase
-      useAuthStore.getState().logout();
-    }
-    
-    // Finish loading
+export const initAuth = async () => {
+  const token = localStorage.getItem("nexus_token");
+  if (!token) {
     useAuthStore.setState({ isLoading: false });
-  });
-} else {
-  // If no auth, we can't be logged in via Firebase. Finish loading.
-  useAuthStore.setState({ isLoading: false });
-}
+    return;
+  }
+
+  try {
+    const data = await authService.getMe();
+    useAuthStore.getState().login(token, data.email, data.display_name);
+  } catch (error) {
+    console.error("Failed to authenticate session:", error);
+    useAuthStore.getState().logout();
+  } finally {
+    useAuthStore.setState({ isLoading: false });
+  }
+};
+
+// Start initialization immediately
+initAuth();
