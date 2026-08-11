@@ -42,6 +42,10 @@ func (c *Client) PublishStreamChunk(ctx context.Context, chatID string, chunk AI
 	return c.client.Publish(ctx, channel, data).Err()
 }
 
+func (c *Client) RedisClient() *redis.Client {
+	return c.client
+}
+
 func (c *Client) Close() error {
 	return c.client.Close()
 }

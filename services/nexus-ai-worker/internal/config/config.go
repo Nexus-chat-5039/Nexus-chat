@@ -21,7 +21,7 @@ func LoadConfig() *Config {
 	return &Config{
 		GCPProjectID:  getEnv("GCP_PROJECT_ID", "nexus-local"),
 		PubSubSubID:   getEnv("PUBSUB_SUB_ID", "ai-inference-sub"),
-		DatabaseURL:   getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/nexus?sslmode=disable"),
+		DatabaseURL:   getEnv("DATABASE_URL", "postgres://root:rootpassword@localhost:5432/nexus?sslmode=disable"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		RAGServiceURL: getEnv("RAG_SERVICE_URL", "localhost:50051"),
 		GatewayURL:    getEnv("GATEWAY_URL", "localhost:50052"),

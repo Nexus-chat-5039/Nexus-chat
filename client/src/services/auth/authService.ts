@@ -2,17 +2,17 @@ import apiClient from "../../api/client";
 
 export const authService = {
   async login(email: string, password: string): Promise<{ user: any, token: string }> {
-    const res = await apiClient.post("/auth/login", { email, password });
+    const res = await apiClient.post("/api/auth/login", { email, password });
     return res.data;
   },
 
   async register(email: string, password: string, display_name: string): Promise<{ user: any, token: string }> {
-    const res = await apiClient.post("/auth/register", { email, password, display_name });
+    const res = await apiClient.post("/api/auth/register", { email, password, display_name });
     return res.data;
   },
 
   async getMe() {
-    const res = await apiClient.get("/auth/me");
+    const res = await apiClient.get("/api/auth/me");
     return res.data;
   },
 };

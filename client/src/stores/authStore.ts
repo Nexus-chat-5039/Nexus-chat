@@ -48,7 +48,7 @@ export const initAuth = async () => {
 
   try {
     const data = await authService.getMe();
-    useAuthStore.getState().login(token, data.email, data.display_name);
+    useAuthStore.getState().login(token, data.user.email, data.user.display_name);
   } catch (error) {
     console.error("Failed to authenticate session:", error);
     useAuthStore.getState().logout();

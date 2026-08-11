@@ -50,17 +50,18 @@ func NewOrchestrator(ragAddr, gatewayAddr, billingAddr string, db *postgres.Clie
 		return nil, fmt.Errorf("failed to connect to gateway service: %w", err)
 	}
 
+	var billingClient pb_billing.BillingServiceClient
 	billingConn, err := grpc.NewClient(billingAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		ragConn.Close()
-		gwConn.Close()
-		return nil, fmt.Errorf("failed to connect to billing service: %w", err)
+		log.Printf("Warning: failed to connect to billing service: %v. Proceeding without billing.", err)
+	} else {
+		billingClient = pb_billing.NewBillingServiceClient(billingConn)
 	}
 
 	return &Orchestrator{
 		ragClient:      pb_rag.NewRAGServiceClient(ragConn),
 		gatewayClient:  pb_gateway.NewAIGatewayServiceClient(gwConn),
-		billingClient:  pb_billing.NewBillingServiceClient(billingConn),
+		billingClient:  billingClient,
 		db:             db,
 		redis:          rdb,
 		ragConn:        ragConn,
@@ -174,20 +175,22 @@ func (o *Orchestrator) ProcessInference(ctx context.Context, job InferenceJob) e
 	}
 
 	// 5. Report token usage to billing service (non-blocking)
-	go func() {
-		// Estimate tokens: prompt (~len(query)/4) + completion (~len(fullResponse)/4)
-		totalTokens := int32(len(job.Query)/4 + len(fullResponse)/4)
-		if totalTokens <= 0 {
-			totalTokens = 1
-		}
-		_, billingErr := o.billingClient.ReportUsage(context.Background(), &pb_billing.ReportRequest{
-			TenantId: job.TenantID,
-			Tokens:   totalTokens,
-		})
-		if billingErr != nil {
-			log.Printf("[billing] Failed to report usage for tenant %s: %v", job.TenantID, billingErr)
-		}
-	}()
+	if o.billingClient != nil {
+		go func() {
+			// Estimate tokens: prompt (~len(query)/4) + completion (~len(fullResponse)/4)
+			totalTokens := int32(len(job.Query)/4 + len(fullResponse)/4)
+			if totalTokens <= 0 {
+				totalTokens = 1
+			}
+			_, billingErr := o.billingClient.ReportUsage(context.Background(), &pb_billing.ReportRequest{
+				TenantId: job.TenantID,
+				Tokens:   totalTokens,
+			})
+			if billingErr != nil {
+				log.Printf("[billing] Failed to report usage for tenant %s: %v", job.TenantID, billingErr)
+			}
+		}()
+	}
 
 	log.Printf("Inference completed for chat %s", job.ChatID)
 	return nil

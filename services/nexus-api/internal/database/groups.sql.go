@@ -11,7 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addGroupMember = `-- name: AddGroupMember :exec
+
+INSERT INTO group_members (group_id, user_id, role)
+VALUES ($1, $2, $3)
+ON CONFLICT (group_id, user_id) DO NOTHING
+`
+
+type AddGroupMemberParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	Role    string      `json:"role"`
+}
+
+// ============================================================
+// Group Members
+// ============================================================
+func (q *Queries) AddGroupMember(ctx context.Context, arg AddGroupMemberParams) error {
+	_, err := q.db.Exec(ctx, addGroupMember, arg.GroupID, arg.UserID, arg.Role)
+	return err
+}
+
 const createChat = `-- name: CreateChat :one
+
 INSERT INTO chats (tenant_id, workspace_id, group_id, title)
 VALUES ($1, $2, $3, $4)
 RETURNING id, tenant_id, workspace_id, group_id, title, created_at
@@ -24,6 +46,9 @@ type CreateChatParams struct {
 	Title       string      `json:"title"`
 }
 
+// ============================================================
+// Chat Queries
+// ============================================================
 func (q *Queries) CreateChat(ctx context.Context, arg CreateChatParams) (Chat, error) {
 	row := q.db.QueryRow(ctx, createChat,
 		arg.TenantID,
@@ -44,9 +69,10 @@ func (q *Queries) CreateChat(ctx context.Context, arg CreateChatParams) (Chat, e
 }
 
 const createGroup = `-- name: CreateGroup :one
-INSERT INTO groups (tenant_id, workspace_id, name, owner_id, ai_enabled)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, workspace_id, name, owner_id, ai_enabled, created_at
+
+INSERT INTO groups (tenant_id, workspace_id, name, owner_id, ai_enabled, invite_code, visibility, join_policy)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, tenant_id, workspace_id, name, owner_id, ai_enabled, invite_code, handle, visibility, join_policy, deleted_at, deletion_reason, created_at
 `
 
 type CreateGroupParams struct {
@@ -55,8 +81,14 @@ type CreateGroupParams struct {
 	Name        string      `json:"name"`
 	OwnerID     pgtype.UUID `json:"owner_id"`
 	AiEnabled   bool        `json:"ai_enabled"`
+	InviteCode  pgtype.Text `json:"invite_code"`
+	Visibility  string      `json:"visibility"`
+	JoinPolicy  string      `json:"join_policy"`
 }
 
+// ============================================================
+// Group Queries
+// ============================================================
 func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error) {
 	row := q.db.QueryRow(ctx, createGroup,
 		arg.TenantID,
@@ -64,6 +96,9 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		arg.Name,
 		arg.OwnerID,
 		arg.AiEnabled,
+		arg.InviteCode,
+		arg.Visibility,
+		arg.JoinPolicy,
 	)
 	var i Group
 	err := row.Scan(
@@ -73,17 +108,67 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		&i.Name,
 		&i.OwnerID,
 		&i.AiEnabled,
+		&i.InviteCode,
+		&i.Handle,
+		&i.Visibility,
+		&i.JoinPolicy,
+		&i.DeletedAt,
+		&i.DeletionReason,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
-const deleteGroup = `-- name: DeleteGroup :exec
-DELETE FROM groups WHERE id = $1
+const createInvite = `-- name: CreateInvite :one
+
+INSERT INTO group_invites (code, group_id, created_by, role_granted, max_uses, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING code, group_id, created_by, role_granted, max_uses, use_count, expires_at, revoked_at, revoked_by, created_at
 `
 
-func (q *Queries) DeleteGroup(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteGroup, id)
+type CreateInviteParams struct {
+	Code        string             `json:"code"`
+	GroupID     pgtype.UUID        `json:"group_id"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	RoleGranted string             `json:"role_granted"`
+	MaxUses     pgtype.Int4        `json:"max_uses"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
+// ============================================================
+// Group Invites
+// ============================================================
+func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (GroupInvite, error) {
+	row := q.db.QueryRow(ctx, createInvite,
+		arg.Code,
+		arg.GroupID,
+		arg.CreatedBy,
+		arg.RoleGranted,
+		arg.MaxUses,
+		arg.ExpiresAt,
+	)
+	var i GroupInvite
+	err := row.Scan(
+		&i.Code,
+		&i.GroupID,
+		&i.CreatedBy,
+		&i.RoleGranted,
+		&i.MaxUses,
+		&i.UseCount,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.RevokedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteChat = `-- name: DeleteChat :exec
+DELETE FROM chats WHERE id = $1
+`
+
+func (q *Queries) DeleteChat(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteChat, id)
 	return err
 }
 
@@ -106,7 +191,7 @@ func (q *Queries) GetChatByID(ctx context.Context, id pgtype.UUID) (Chat, error)
 }
 
 const getGroupByID = `-- name: GetGroupByID :one
-SELECT id, tenant_id, workspace_id, name, owner_id, ai_enabled, created_at FROM groups WHERE id = $1
+SELECT id, tenant_id, workspace_id, name, owner_id, ai_enabled, invite_code, handle, visibility, join_policy, deleted_at, deletion_reason, created_at FROM groups WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetGroupByID(ctx context.Context, id pgtype.UUID) (Group, error) {
@@ -119,14 +204,168 @@ func (q *Queries) GetGroupByID(ctx context.Context, id pgtype.UUID) (Group, erro
 		&i.Name,
 		&i.OwnerID,
 		&i.AiEnabled,
+		&i.InviteCode,
+		&i.Handle,
+		&i.Visibility,
+		&i.JoinPolicy,
+		&i.DeletedAt,
+		&i.DeletionReason,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
+const getGroupByInviteCode = `-- name: GetGroupByInviteCode :one
+SELECT id, tenant_id, workspace_id, name, owner_id, ai_enabled, invite_code, handle, visibility, join_policy, deleted_at, deletion_reason, created_at FROM groups WHERE invite_code = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) GetGroupByInviteCode(ctx context.Context, inviteCode pgtype.Text) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByInviteCode, inviteCode)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.OwnerID,
+		&i.AiEnabled,
+		&i.InviteCode,
+		&i.Handle,
+		&i.Visibility,
+		&i.JoinPolicy,
+		&i.DeletedAt,
+		&i.DeletionReason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getGroupMember = `-- name: GetGroupMember :one
+SELECT group_id, user_id, role, joined_at FROM group_members WHERE group_id = $1 AND user_id = $2
+`
+
+type GetGroupMemberParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetGroupMember(ctx context.Context, arg GetGroupMemberParams) (GroupMember, error) {
+	row := q.db.QueryRow(ctx, getGroupMember, arg.GroupID, arg.UserID)
+	var i GroupMember
+	err := row.Scan(
+		&i.GroupID,
+		&i.UserID,
+		&i.Role,
+		&i.JoinedAt,
+	)
+	return i, err
+}
+
+const getInviteByCode = `-- name: GetInviteByCode :one
+SELECT code, group_id, created_by, role_granted, max_uses, use_count, expires_at, revoked_at, revoked_by, created_at FROM group_invites WHERE code = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) GetInviteByCode(ctx context.Context, code string) (GroupInvite, error) {
+	row := q.db.QueryRow(ctx, getInviteByCode, code)
+	var i GroupInvite
+	err := row.Scan(
+		&i.Code,
+		&i.GroupID,
+		&i.CreatedBy,
+		&i.RoleGranted,
+		&i.MaxUses,
+		&i.UseCount,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.RevokedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const incrementInviteUseCount = `-- name: IncrementInviteUseCount :one
+UPDATE group_invites
+SET use_count = use_count + 1
+WHERE code = $1 AND use_count < COALESCE(max_uses, 2147483647)
+RETURNING use_count
+`
+
+func (q *Queries) IncrementInviteUseCount(ctx context.Context, code string) (int32, error) {
+	row := q.db.QueryRow(ctx, incrementInviteUseCount, code)
+	var use_count int32
+	err := row.Scan(&use_count)
+	return use_count, err
+}
+
+const insertAuditLog = `-- name: InsertAuditLog :exec
+
+INSERT INTO group_audit_log (group_id, actor_id, action, metadata)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertAuditLogParams struct {
+	GroupID  pgtype.UUID `json:"group_id"`
+	ActorID  pgtype.UUID `json:"actor_id"`
+	Action   string      `json:"action"`
+	Metadata []byte      `json:"metadata"`
+}
+
+// ============================================================
+// Audit Log
+// ============================================================
+func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.GroupID,
+		arg.ActorID,
+		arg.Action,
+		arg.Metadata,
+	)
+	return err
+}
+
+const listAuditLog = `-- name: ListAuditLog :many
+SELECT id, group_id, actor_id, action, metadata, created_at FROM group_audit_log
+WHERE group_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListAuditLogParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	Limit   int32       `json:"limit"`
+	Offset  int32       `json:"offset"`
+}
+
+func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]GroupAuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLog, arg.GroupID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GroupAuditLog
+	for rows.Next() {
+		var i GroupAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.ActorID,
+			&i.Action,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChatsByGroup = `-- name: ListChatsByGroup :many
 SELECT id, tenant_id, workspace_id, group_id, title, created_at FROM chats WHERE group_id = $1
-ORDER BY created_at DESC
+ORDER BY created_at ASC
 `
 
 func (q *Queries) ListChatsByGroup(ctx context.Context, groupID pgtype.UUID) ([]Chat, error) {
@@ -156,18 +395,61 @@ func (q *Queries) ListChatsByGroup(ctx context.Context, groupID pgtype.UUID) ([]
 	return items, nil
 }
 
-const listGroupsByWorkspace = `-- name: ListGroupsByWorkspace :many
-SELECT id, tenant_id, workspace_id, name, owner_id, ai_enabled, created_at FROM groups WHERE tenant_id = $1 AND workspace_id = $2
-ORDER BY created_at DESC
+const listGroupMembers = `-- name: ListGroupMembers :many
+SELECT gm.group_id, gm.user_id, gm.role, gm.joined_at, u.email, u.display_name, u.avatar_url
+FROM group_members gm
+JOIN users u ON u.id = gm.user_id
+WHERE gm.group_id = $1
+ORDER BY gm.joined_at
 `
 
-type ListGroupsByWorkspaceParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
+type ListGroupMembersRow struct {
+	GroupID     pgtype.UUID        `json:"group_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Role        string             `json:"role"`
+	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	Email       string             `json:"email"`
+	DisplayName string             `json:"display_name"`
+	AvatarUrl   string             `json:"avatar_url"`
 }
 
-func (q *Queries) ListGroupsByWorkspace(ctx context.Context, arg ListGroupsByWorkspaceParams) ([]Group, error) {
-	rows, err := q.db.Query(ctx, listGroupsByWorkspace, arg.TenantID, arg.WorkspaceID)
+func (q *Queries) ListGroupMembers(ctx context.Context, groupID pgtype.UUID) ([]ListGroupMembersRow, error) {
+	rows, err := q.db.Query(ctx, listGroupMembers, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupMembersRow
+	for rows.Next() {
+		var i ListGroupMembersRow
+		if err := rows.Scan(
+			&i.GroupID,
+			&i.UserID,
+			&i.Role,
+			&i.JoinedAt,
+			&i.Email,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupsByUser = `-- name: ListGroupsByUser :many
+SELECT g.id, g.tenant_id, g.workspace_id, g.name, g.owner_id, g.ai_enabled, g.invite_code, g.handle, g.visibility, g.join_policy, g.deleted_at, g.deletion_reason, g.created_at FROM groups g
+JOIN group_members gm ON gm.group_id = g.id
+WHERE gm.user_id = $1 AND g.deleted_at IS NULL
+ORDER BY g.created_at DESC
+`
+
+func (q *Queries) ListGroupsByUser(ctx context.Context, userID pgtype.UUID) ([]Group, error) {
+	rows, err := q.db.Query(ctx, listGroupsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -182,6 +464,49 @@ func (q *Queries) ListGroupsByWorkspace(ctx context.Context, arg ListGroupsByWor
 			&i.Name,
 			&i.OwnerID,
 			&i.AiEnabled,
+			&i.InviteCode,
+			&i.Handle,
+			&i.Visibility,
+			&i.JoinPolicy,
+			&i.DeletedAt,
+			&i.DeletionReason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvitesByGroup = `-- name: ListInvitesByGroup :many
+SELECT code, group_id, created_by, role_granted, max_uses, use_count, expires_at, revoked_at, revoked_by, created_at FROM group_invites
+WHERE group_id = $1 AND revoked_at IS NULL
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListInvitesByGroup(ctx context.Context, groupID pgtype.UUID) ([]GroupInvite, error) {
+	rows, err := q.db.Query(ctx, listInvitesByGroup, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GroupInvite
+	for rows.Next() {
+		var i GroupInvite
+		if err := rows.Scan(
+			&i.Code,
+			&i.GroupID,
+			&i.CreatedBy,
+			&i.RoleGranted,
+			&i.MaxUses,
+			&i.UseCount,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -195,9 +520,12 @@ func (q *Queries) ListGroupsByWorkspace(ctx context.Context, arg ListGroupsByWor
 }
 
 const listMessagesByChat = `-- name: ListMessagesByChat :many
-SELECT id, tenant_id, workspace_id, group_id, chat_id, user_id, role, content, reply_to, reactions, is_deleted, is_edited, created_at, updated_at FROM messages
-WHERE chat_id = $1 AND is_deleted = false
-ORDER BY created_at ASC
+
+SELECT m.id, m.tenant_id, m.workspace_id, m.group_id, m.chat_id, m.user_id, m.role, m.content, m.reply_to, m.reactions, m.is_deleted, m.is_edited, m.created_at, m.updated_at, u.email as user_email, u.display_name, u.avatar_url 
+FROM messages m
+LEFT JOIN users u ON m.user_id = u.id
+WHERE m.chat_id = $1 AND m.is_deleted = false
+ORDER BY m.created_at ASC
 LIMIT $2 OFFSET $3
 `
 
@@ -207,15 +535,38 @@ type ListMessagesByChatParams struct {
 	Offset int32       `json:"offset"`
 }
 
-func (q *Queries) ListMessagesByChat(ctx context.Context, arg ListMessagesByChatParams) ([]Message, error) {
+type ListMessagesByChatRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
+	ChatID      pgtype.UUID        `json:"chat_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Role        string             `json:"role"`
+	Content     string             `json:"content"`
+	ReplyTo     []byte             `json:"reply_to"`
+	Reactions   []byte             `json:"reactions"`
+	IsDeleted   bool               `json:"is_deleted"`
+	IsEdited    bool               `json:"is_edited"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	UserEmail   pgtype.Text        `json:"user_email"`
+	DisplayName pgtype.Text        `json:"display_name"`
+	AvatarUrl   pgtype.Text        `json:"avatar_url"`
+}
+
+// ============================================================
+// Message Queries
+// ============================================================
+func (q *Queries) ListMessagesByChat(ctx context.Context, arg ListMessagesByChatParams) ([]ListMessagesByChatRow, error) {
 	rows, err := q.db.Query(ctx, listMessagesByChat, arg.ChatID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Message
+	var items []ListMessagesByChatRow
 	for rows.Next() {
-		var i Message
+		var i ListMessagesByChatRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -231,6 +582,9 @@ func (q *Queries) ListMessagesByChat(ctx context.Context, arg ListMessagesByChat
 			&i.IsEdited,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UserEmail,
+			&i.DisplayName,
+			&i.AvatarUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -240,6 +594,48 @@ func (q *Queries) ListMessagesByChat(ctx context.Context, arg ListMessagesByChat
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeGroupMember = `-- name: RemoveGroupMember :exec
+DELETE FROM group_members WHERE group_id = $1 AND user_id = $2
+`
+
+type RemoveGroupMemberParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberParams) error {
+	_, err := q.db.Exec(ctx, removeGroupMember, arg.GroupID, arg.UserID)
+	return err
+}
+
+const revokeInvite = `-- name: RevokeInvite :exec
+UPDATE group_invites SET revoked_at = NOW(), revoked_by = $2 WHERE code = $1
+`
+
+type RevokeInviteParams struct {
+	Code      string      `json:"code"`
+	RevokedBy pgtype.UUID `json:"revoked_by"`
+}
+
+func (q *Queries) RevokeInvite(ctx context.Context, arg RevokeInviteParams) error {
+	_, err := q.db.Exec(ctx, revokeInvite, arg.Code, arg.RevokedBy)
+	return err
+}
+
+const softDeleteGroup = `-- name: SoftDeleteGroup :exec
+UPDATE groups SET deleted_at = NOW(), deletion_reason = $2 WHERE id = $1
+`
+
+type SoftDeleteGroupParams struct {
+	ID             pgtype.UUID `json:"id"`
+	DeletionReason pgtype.Text `json:"deletion_reason"`
+}
+
+func (q *Queries) SoftDeleteGroup(ctx context.Context, arg SoftDeleteGroupParams) error {
+	_, err := q.db.Exec(ctx, softDeleteGroup, arg.ID, arg.DeletionReason)
+	return err
 }
 
 const updateGroupAI = `-- name: UpdateGroupAI :exec

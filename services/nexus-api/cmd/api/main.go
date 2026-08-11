@@ -81,6 +81,14 @@ func main() {
 
 	// Protected Auth
 	protected.GET("/auth/me", authHandler.GetMe)
+	
+	// Mock Profile Routes (For minimal architecture onboarding)
+	protected.PUT("/auth/profile", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Profile updated (mock)"})
+	})
+	protected.POST("/auth/profile/avatar", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Avatar uploaded (mock)"})
+	})
 
 	// Workspaces
 	wsHandler := handlers.NewWorkspaceHandler(queries)
@@ -90,10 +98,12 @@ func main() {
 	protected.GET("/workspaces/:id/members", wsHandler.ListMembers)
 	protected.POST("/workspaces/:id/members", wsHandler.AddMember)
 
-	// Groups
+	// Groups (Enterprise)
 	groupHandler := handlers.NewGroupHandler(queries)
 	protected.POST("/groups", groupHandler.Create)
 	protected.GET("/groups", groupHandler.List)
+	protected.POST("/groups/join", groupHandler.Join)
+	protected.DELETE("/groups/:id", groupHandler.Delete)
 
 	// Chats
 	chatHandler := handlers.NewChatHandler(queries)

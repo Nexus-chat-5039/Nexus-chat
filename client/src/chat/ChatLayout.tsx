@@ -182,11 +182,11 @@ export default function ChatLayout() {
             <div className="w-72 h-full p-5">
               <h3 className="font-semibold text-sm mb-4">{activeGroup.name}</h3>
               <p className="text-xs text-nexus-muted mb-4">
-                {activeGroup.members.length} member{activeGroup.members.length !== 1 ? "s" : ""}
+                {(activeGroup.members || []).length} member{(activeGroup.members || []).length !== 1 ? "s" : ""}
               </p>
               <div className="space-y-2">
                 <p className="text-[10px] font-medium uppercase tracking-wider text-nexus-muted">Members</p>
-                {activeGroup.members.map((m) => (
+                {(activeGroup.members || []).map((m) => (
                   <div key={m} className="flex items-center gap-2.5 py-1.5">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-nexus-primary/30 to-purple-500/20 flex items-center justify-center text-[10px] font-bold text-nexus-text/70">
                       {m.substring(0, 2).toUpperCase()}
@@ -213,10 +213,10 @@ export default function ChatLayout() {
             <div className="px-5 pb-6">
               <h3 className="font-semibold mb-1">{activeGroup.name}</h3>
               <p className="text-xs text-nexus-muted mb-4">
-                {activeGroup.members.length} member{activeGroup.members.length !== 1 ? "s" : ""}
+                {(activeGroup.members || []).length} member{(activeGroup.members || []).length !== 1 ? "s" : ""}
               </p>
               <div className="space-y-2">
-                {activeGroup.members.map((m) => (
+                {(activeGroup.members || []).map((m) => (
                   <div key={m} className="flex items-center gap-2.5 py-1.5">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nexus-primary/30 to-purple-500/20 flex items-center justify-center text-xs font-bold text-nexus-text/70">
                       {m.substring(0, 2).toUpperCase()}

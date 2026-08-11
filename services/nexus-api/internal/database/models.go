@@ -18,13 +18,48 @@ type Chat struct {
 }
 
 type Group struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Name        string             `json:"name"`
-	OwnerID     pgtype.UUID        `json:"owner_id"`
-	AiEnabled   bool               `json:"ai_enabled"`
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	Name           string             `json:"name"`
+	OwnerID        pgtype.UUID        `json:"owner_id"`
+	AiEnabled      bool               `json:"ai_enabled"`
+	InviteCode     pgtype.Text        `json:"invite_code"`
+	Handle         pgtype.Text        `json:"handle"`
+	Visibility     string             `json:"visibility"`
+	JoinPolicy     string             `json:"join_policy"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason pgtype.Text        `json:"deletion_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type GroupAuditLog struct {
+	ID        pgtype.UUID        `json:"id"`
+	GroupID   pgtype.UUID        `json:"group_id"`
+	ActorID   pgtype.UUID        `json:"actor_id"`
+	Action    string             `json:"action"`
+	Metadata  []byte             `json:"metadata"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type GroupInvite struct {
+	Code        string             `json:"code"`
+	GroupID     pgtype.UUID        `json:"group_id"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	RoleGranted string             `json:"role_granted"`
+	MaxUses     pgtype.Int4        `json:"max_uses"`
+	UseCount    int32              `json:"use_count"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt   pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy   pgtype.UUID        `json:"revoked_by"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type GroupMember struct {
+	GroupID  pgtype.UUID        `json:"group_id"`
+	UserID   pgtype.UUID        `json:"user_id"`
+	Role     string             `json:"role"`
+	JoinedAt pgtype.Timestamptz `json:"joined_at"`
 }
 
 type Message struct {

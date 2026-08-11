@@ -7,7 +7,7 @@ export async function updateProfile(
   bio?: string,
   is_private?: boolean
 ) {
-  const res = await apiClient.put("/auth/profile", {
+  const res = await apiClient.put("/api/auth/profile", {
     username,
     email,
     full_name,
@@ -18,7 +18,7 @@ export async function updateProfile(
 }
 
 export async function getProfile() {
-  const res = await apiClient.get("/auth/me")
+  const res = await apiClient.get("/api/auth/me")
   return res.data
 }
 
@@ -26,7 +26,7 @@ export async function uploadAvatar(file: File) {
   const formData = new FormData()
   formData.append("file", file)
 
-  const res = await apiClient.post("/auth/profile/avatar", formData, {
+  const res = await apiClient.post("/api/auth/profile/avatar", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   })
   return res.data

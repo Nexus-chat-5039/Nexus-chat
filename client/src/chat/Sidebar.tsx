@@ -209,20 +209,25 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* Group ID (share) */}
-        {activeGroupId && !activeGroupId.startsWith("personal") && (
-          <div className="mt-4 mx-1 p-2.5 rounded-lg bg-nexus-card/40 border border-nexus-border/30">
-            <p className="text-[9px] uppercase tracking-wider text-nexus-muted/60 font-semibold mb-1">
-              Group ID (click to copy)
-            </p>
-            <p
-              className="text-[10px] font-mono text-nexus-text/50 hover:text-nexus-primary transition-colors truncate cursor-pointer select-all"
-              onClick={() => navigator.clipboard.writeText(activeGroupId)}
-            >
-              {activeGroupId}
-            </p>
-          </div>
-        )}
+        {/* Invite Code (share) */}
+        {activeGroupId && !activeGroupId.startsWith("personal") && (() => {
+          const group = groups.find((g) => g.id === activeGroupId)
+          const inviteCode = group?.invite_code
+          if (!inviteCode) return null
+          return (
+            <div className="mt-4 mx-1 p-2.5 rounded-lg bg-nexus-card/40 border border-nexus-border/30">
+              <p className="text-[9px] uppercase tracking-wider text-nexus-muted/60 font-semibold mb-1">
+                Invite Code (click to copy)
+              </p>
+              <p
+                className="text-sm font-mono font-bold text-nexus-primary/80 hover:text-nexus-primary transition-colors cursor-pointer select-all tracking-widest"
+                onClick={() => navigator.clipboard.writeText(inviteCode)}
+              >
+                {inviteCode}
+              </p>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Footer */}
@@ -257,7 +262,7 @@ export default function Sidebar({
       >
         <div className="flex flex-col gap-4">
           {modalType === "join" && (
-            <p className="text-sm text-nexus-muted">Enter the unique Group ID shared by the admin.</p>
+            <p className="text-sm text-nexus-muted">Enter the invite code shared by the group admin (e.g. NX7K-Q2R9).</p>
           )}
           <input
             autoFocus
@@ -265,7 +270,7 @@ export default function Sidebar({
             className="w-full rounded-xl bg-nexus-bg border border-nexus-border px-4 py-3 text-nexus-text text-sm focus:border-nexus-primary/50 focus:outline-none focus:ring-[3px] focus:ring-nexus-primary/10 transition-all"
             placeholder={
               modalType === "group" ? "Group Name..." :
-              modalType === "chat" ? "Chat Title..." : "Group ID..."
+              modalType === "chat" ? "Chat Title..." : "Invite Code (e.g. NX7K-Q2R9)"
             }
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}

@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"log"
+	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +18,25 @@ import (
 	"nexus/services/nexus-api/internal/database"
 	"nexus/services/nexus-api/internal/middleware"
 )
+
+// ────────────────────────────────────────────────────────────────
+// Invite Code Generator (Crockford Base32, NX7K-Q2R9 format)
+// ────────────────────────────────────────────────────────────────
+
+const crockfordAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+func generateInviteCode() (string, error) {
+	code := make([]byte, 8)
+	for i := range code {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(crockfordAlphabet))))
+		if err != nil {
+			return "", err
+		}
+		code[i] = crockfordAlphabet[n.Int64()]
+	}
+	// Format as XXXX-XXXX
+	return string(code[:4]) + "-" + string(code[4:]), nil
+}
 
 // ────────────────────────────────────────────────────────────────
 // Auth Handler
@@ -59,15 +83,32 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		DisplayName:  displayName,
 	})
 	if err != nil {
-		// Check for duplicate email
 		c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 		return
 	}
 
+	// Create default tenant and workspace
+	tenant, err := h.db.CreateTenant(c.Request.Context(), database.CreateTenantParams{
+		Name: displayName + "'s Organization",
+		Plan: "free",
+	})
+	if err == nil {
+		ws, err := h.db.CreateWorkspace(c.Request.Context(), database.CreateWorkspaceParams{
+			TenantID: tenant.ID,
+			Name:     displayName + "'s Workspace",
+			Slug:     strings.ToLower(strings.ReplaceAll(displayName, " ", "-")) + "-workspace",
+		})
+		if err == nil {
+			h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
+				WorkspaceID: ws.ID,
+				UserID:      user.ID,
+				Role:        "owner",
+			})
+		}
+	}
+
 	// Generate JWT
-	userID := fmt.Sprintf("%x-%x-%x-%x-%x",
-		user.ID.Bytes[0:4], user.ID.Bytes[4:6], user.ID.Bytes[6:8],
-		user.ID.Bytes[8:10], user.ID.Bytes[10:16])
+	userID := formatUUID(user.ID)
 
 	token, err := middleware.GenerateJWT(userID, user.Email, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
@@ -109,9 +150,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.db.UpdateLastSeen(c.Request.Context(), user.ID)
 
 	// Generate JWT
-	userID := fmt.Sprintf("%x-%x-%x-%x-%x",
-		user.ID.Bytes[0:4], user.ID.Bytes[4:6], user.ID.Bytes[6:8],
-		user.ID.Bytes[8:10], user.ID.Bytes[10:16])
+	userID := formatUUID(user.ID)
 
 	token, err := middleware.GenerateJWT(userID, user.Email, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
@@ -152,6 +191,13 @@ func sanitizeUser(u database.User) gin.H {
 		"created_at":   u.CreatedAt,
 		"last_seen":    u.LastSeen,
 	}
+}
+
+// formatUUID converts pgtype.UUID to a standard UUID string.
+func formatUUID(id pgtype.UUID) string {
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		id.Bytes[0:4], id.Bytes[4:6], id.Bytes[6:8],
+		id.Bytes[8:10], id.Bytes[10:16])
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -289,7 +335,7 @@ func (h *WorkspaceHandler) AddMember(c *gin.Context) {
 }
 
 // ────────────────────────────────────────────────────────────────
-// Group Handler
+// Group Handler (Enterprise)
 // ────────────────────────────────────────────────────────────────
 
 type GroupHandler struct {
@@ -300,11 +346,11 @@ func NewGroupHandler(db *database.Queries) *GroupHandler {
 	return &GroupHandler{db: db}
 }
 
-// POST /api/groups
+// POST /api/groups — Create a new group with invite code
 func (h *GroupHandler) Create(c *gin.Context) {
 	var req struct {
-		TenantID    string `json:"tenant_id" binding:"required"`
-		WorkspaceID string `json:"workspace_id" binding:"required"`
+		TenantID    string `json:"tenant_id"`
+		WorkspaceID string `json:"workspace_id"`
 		Name        string `json:"name" binding:"required"`
 		AIEnabled   bool   `json:"ai_enabled"`
 	}
@@ -318,8 +364,38 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	uid.Scan(userID.(string))
 
 	var tenantID, wsID pgtype.UUID
-	tenantID.Scan(req.TenantID)
-	wsID.Scan(req.WorkspaceID)
+	
+	if req.TenantID != "" && req.WorkspaceID != "" {
+		tenantID.Scan(req.TenantID)
+		wsID.Scan(req.WorkspaceID)
+	} else {
+		// Fallback to the user's first available workspace
+		workspaces, err := h.db.ListWorkspacesByUser(c.Request.Context(), uid)
+		if err != nil || len(workspaces) == 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "no workspace available to create group"})
+			return
+		}
+		tenantID = workspaces[0].TenantID
+		wsID = workspaces[0].ID
+	}
+
+	// Generate unique invite code with retry
+	var inviteCode string
+	for i := 0; i < 5; i++ {
+		code, err := generateInviteCode()
+		if err != nil {
+			continue
+		}
+		inviteCode = code
+		break
+	}
+	if inviteCode == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate invite code"})
+		return
+	}
+
+	var inviteCodePg pgtype.Text
+	inviteCodePg.Scan(inviteCode)
 
 	group, err := h.db.CreateGroup(c.Request.Context(), database.CreateGroupParams{
 		TenantID:    tenantID,
@@ -327,31 +403,191 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		Name:        req.Name,
 		OwnerID:     uid,
 		AiEnabled:   req.AIEnabled,
+		InviteCode:  inviteCodePg,
+		Visibility:  "private",
+		JoinPolicy:  "invite_only",
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create group"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"group": group})
-}
+	// Add creator as owner in group_members
+	h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+		GroupID: group.ID,
+		UserID:  uid,
+		Role:    "owner",
+	})
 
-// GET /api/groups?tenant_id=...&workspace_id=...
-func (h *GroupHandler) List(c *gin.Context) {
-	var tenantID, wsID pgtype.UUID
-	tenantID.Scan(c.Query("tenant_id"))
-	wsID.Scan(c.Query("workspace_id"))
-
-	groups, err := h.db.ListGroupsByWorkspace(c.Request.Context(), database.ListGroupsByWorkspaceParams{
+	// Create a default "General" chat for the new group
+	chat, err := h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
 		TenantID:    tenantID,
 		WorkspaceID: wsID,
+		GroupID:     group.ID,
+		Title:       "General",
 	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create default chat"})
+		return
+	}
+
+	// Audit log
+	h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
+		GroupID: group.ID,
+		ActorID: uid,
+		Action:  "group.created",
+		Metadata: mustJSON(map[string]string{
+			"name":        req.Name,
+			"invite_code": inviteCode,
+		}),
+	})
+
+	// Fetch members for response
+	members, _ := h.db.ListGroupMembers(c.Request.Context(), group.ID)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"group": serializeGroup(group, []database.Chat{chat}, members),
+	})
+}
+
+// GET /api/groups — List groups the authenticated user belongs to
+func (h *GroupHandler) List(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
+
+	groups, err := h.db.ListGroupsByUser(c.Request.Context(), uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list groups"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"groups": groups})
+	var result []gin.H
+	for _, g := range groups {
+		chats, err := h.db.ListChatsByGroup(c.Request.Context(), g.ID)
+		if err != nil {
+			chats = []database.Chat{}
+		}
+		members, _ := h.db.ListGroupMembers(c.Request.Context(), g.ID)
+		result = append(result, serializeGroup(g, chats, members))
+	}
+
+	c.JSON(http.StatusOK, gin.H{"groups": result})
+}
+
+// POST /api/groups/join — Join a group via invite code
+func (h *GroupHandler) Join(c *gin.Context) {
+	var req struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
+
+	// Normalize: uppercase and trim
+	code := strings.ToUpper(strings.TrimSpace(req.Code))
+
+	// Look up group by invite_code on the groups table
+	var inviteCodePg pgtype.Text
+	inviteCodePg.Scan(code)
+
+	group, err := h.db.GetGroupByInviteCode(c.Request.Context(), inviteCodePg)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invalid invite code"})
+		return
+	}
+
+	// Check if already a member
+	_, err = h.db.GetGroupMember(c.Request.Context(), database.GetGroupMemberParams{
+		GroupID: group.ID,
+		UserID:  uid,
+	})
+	if err == nil {
+		// Already a member, just return the group
+		chats, _ := h.db.ListChatsByGroup(c.Request.Context(), group.ID)
+		members, _ := h.db.ListGroupMembers(c.Request.Context(), group.ID)
+		c.JSON(http.StatusOK, gin.H{"group": serializeGroup(group, chats, members)})
+		return
+	}
+
+	// Add as member
+	h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+		GroupID: group.ID,
+		UserID:  uid,
+		Role:    "member",
+	})
+
+	// Also add to workspace_members so message send works
+	h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
+		WorkspaceID: group.WorkspaceID,
+		UserID:      uid,
+		Role:        "member",
+	})
+
+	// Audit log
+	h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
+		GroupID: group.ID,
+		ActorID: uid,
+		Action:  "member.joined",
+		Metadata: mustJSON(map[string]string{
+			"method": "invite_code",
+			"code":   code,
+		}),
+	})
+
+	chats, _ := h.db.ListChatsByGroup(c.Request.Context(), group.ID)
+	members, _ := h.db.ListGroupMembers(c.Request.Context(), group.ID)
+
+	c.JSON(http.StatusOK, gin.H{"group": serializeGroup(group, chats, members)})
+}
+
+// DELETE /api/groups/:id — Soft delete a group
+func (h *GroupHandler) Delete(c *gin.Context) {
+	var groupID pgtype.UUID
+	groupID.Scan(c.Param("id"))
+
+	userID, _ := c.Get("user_id")
+	var uid pgtype.UUID
+	uid.Scan(userID.(string))
+
+	// Verify ownership
+	group, err := h.db.GetGroupByID(c.Request.Context(), groupID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
+		return
+	}
+
+	if group.OwnerID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the group owner can delete this group"})
+		return
+	}
+
+	var reason pgtype.Text
+	reason.Scan("deleted by owner")
+
+	err = h.db.SoftDeleteGroup(c.Request.Context(), database.SoftDeleteGroupParams{
+		ID:             groupID,
+		DeletionReason: reason,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete group"})
+		return
+	}
+
+	// Audit log
+	h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
+		GroupID:  groupID,
+		ActorID:  uid,
+		Action:   "group.deleted",
+		Metadata: mustJSON(map[string]string{"reason": "deleted by owner"}),
+	})
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -369,25 +605,30 @@ func NewChatHandler(db *database.Queries) *ChatHandler {
 // POST /api/chats
 func (h *ChatHandler) Create(c *gin.Context) {
 	var req struct {
-		TenantID    string `json:"tenant_id" binding:"required"`
-		WorkspaceID string `json:"workspace_id" binding:"required"`
+		TenantID    string `json:"tenant_id"`
+		WorkspaceID string `json:"workspace_id"`
 		GroupID     string `json:"group_id" binding:"required"`
-		Title       string `json:"title"`
+		Title       string `json:"title" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var tenantID, wsID, groupID pgtype.UUID
-	tenantID.Scan(req.TenantID)
-	wsID.Scan(req.WorkspaceID)
+	var groupID pgtype.UUID
 	groupID.Scan(req.GroupID)
 
+	// Get the group to inherit tenant/workspace
+	group, err := h.db.GetGroupByID(c.Request.Context(), groupID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
+		return
+	}
+
 	chat, err := h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
-		TenantID:    tenantID,
-		WorkspaceID: wsID,
-		GroupID:     groupID,
+		TenantID:    group.TenantID,
+		WorkspaceID: group.WorkspaceID,
+		GroupID:     group.ID,
 		Title:       req.Title,
 	})
 	if err != nil {
@@ -398,12 +639,18 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"chat": chat})
 }
 
-// GET /api/chats?group_id=...
+// GET /api/chats
 func (h *ChatHandler) List(c *gin.Context) {
-	var groupID pgtype.UUID
-	groupID.Scan(c.Query("group_id"))
+	groupID := c.Query("group_id")
+	if groupID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "group_id query param required"})
+		return
+	}
 
-	chats, err := h.db.ListChatsByGroup(c.Request.Context(), groupID)
+	var gid pgtype.UUID
+	gid.Scan(groupID)
+
+	chats, err := h.db.ListChatsByGroup(c.Request.Context(), gid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list chats"})
 		return
@@ -412,35 +659,73 @@ func (h *ChatHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"chats": chats})
 }
 
-// GET /api/chats/:id/messages?limit=50&offset=0
+// GET /api/chats/:id/messages
 func (h *ChatHandler) ListMessages(c *gin.Context) {
 	var chatID pgtype.UUID
 	chatID.Scan(c.Param("id"))
 
-	limit := int32(50)
-	offset := int32(0)
+	limitStr := c.DefaultQuery("limit", "50")
+	offsetStr := c.DefaultQuery("offset", "0")
 
-	// Parse query params
-	if l := c.Query("limit"); l != "" {
-		if v, err := strconv.ParseInt(l, 10, 32); err == nil && v > 0 && v <= 200 {
-			limit = int32(v)
-		}
-	}
-	if o := c.Query("offset"); o != "" {
-		if v, err := strconv.ParseInt(o, 10, 32); err == nil && v >= 0 {
-			offset = int32(v)
-		}
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+	offset, _ := strconv.ParseInt(offsetStr, 10, 32)
+
+	if limit <= 0 || limit > 200 {
+		limit = 50
 	}
 
 	messages, err := h.db.ListMessagesByChat(c.Request.Context(), database.ListMessagesByChatParams{
 		ChatID: chatID,
-		Limit:  limit,
-		Offset: offset,
+		Limit:  int32(limit),
+		Offset: int32(offset),
 	})
 	if err != nil {
+		log.Printf("[ERROR] failed to list messages for chat %s: %v", chatID.String(), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list messages"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"messages": messages})
+}
+
+// ────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────
+
+// serializeGroup builds a consistent JSON response for a group
+func serializeGroup(g database.Group, chats []database.Chat, members []database.ListGroupMembersRow) gin.H {
+	// Build member list with emails
+	memberEmails := make([]string, len(members))
+	for i, m := range members {
+		memberEmails[i] = m.Email
+	}
+
+	inviteCode := ""
+	if g.InviteCode.Valid {
+		inviteCode = g.InviteCode.String
+	}
+
+	return gin.H{
+		"id":           g.ID,
+		"tenant_id":    g.TenantID,
+		"workspace_id": g.WorkspaceID,
+		"name":         g.Name,
+		"owner_id":     g.OwnerID,
+		"ai_enabled":   g.AiEnabled,
+		"invite_code":  inviteCode,
+		"visibility":   g.Visibility,
+		"join_policy":  g.JoinPolicy,
+		"created_at":   g.CreatedAt,
+		"chats":        chats,
+		"members":      memberEmails,
+	}
+}
+
+// mustJSON marshals a value to JSON bytes, panicking on error (safe for known types).
+func mustJSON(v interface{}) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
 }

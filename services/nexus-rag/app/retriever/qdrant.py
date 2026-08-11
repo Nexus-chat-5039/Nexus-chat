@@ -31,6 +31,8 @@ class QdrantRetriever:
         connect_kwargs = {"host": QDRANT_HOST, "port": QDRANT_PORT}
         if QDRANT_API_KEY:
             connect_kwargs["api_key"] = QDRANT_API_KEY
+        if "cloud.qdrant.io" in QDRANT_HOST:
+            connect_kwargs["https"] = True
 
         self.client = QdrantClient(**connect_kwargs)
         self.collection_name = QDRANT_COLLECTION

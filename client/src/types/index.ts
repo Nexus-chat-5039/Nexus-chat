@@ -14,6 +14,7 @@ export type Message = {
   replyTo?: ReplyTo
   is_deleted?: boolean
   is_edited?: boolean
+  created_at?: string
 }
 
 export type Chat = {
@@ -25,9 +26,14 @@ export type Chat = {
 export type Group = {
   id: string
   name: string
-  user_id?: string
+  owner_id?: string
+  invite_code?: string
+  visibility?: string
+  join_policy?: string
   members: string[]
   chats: Chat[]
+  tenant_id?: string
+  workspace_id?: string
 }
 
 export type User = {

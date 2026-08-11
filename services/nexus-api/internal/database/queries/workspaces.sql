@@ -1,3 +1,8 @@
+-- name: CreateTenant :one
+INSERT INTO tenants (name, plan)
+VALUES ($1, $2)
+RETURNING *;
+
 -- name: CreateWorkspace :one
 INSERT INTO workspaces (tenant_id, name, slug)
 VALUES ($1, $2, $3)
@@ -33,3 +38,9 @@ ORDER BY wm.joined_at;
 
 -- name: RemoveWorkspaceMember :exec
 DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2;
+
+-- name: ListWorkspacesByUser :many
+SELECT w.* FROM workspaces w
+JOIN workspace_members wm ON wm.workspace_id = w.id
+WHERE wm.user_id = $1
+ORDER BY w.created_at DESC;

@@ -28,6 +28,30 @@ func (q *Queries) AddWorkspaceMember(ctx context.Context, arg AddWorkspaceMember
 	return err
 }
 
+const createTenant = `-- name: CreateTenant :one
+INSERT INTO tenants (name, plan)
+VALUES ($1, $2)
+RETURNING id, name, plan, billing, created_at
+`
+
+type CreateTenantParams struct {
+	Name string `json:"name"`
+	Plan string `json:"plan"`
+}
+
+func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, createTenant, arg.Name, arg.Plan)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Plan,
+		&i.Billing,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (tenant_id, name, slug)
 VALUES ($1, $2, $3)
@@ -172,6 +196,40 @@ type ListWorkspacesByTenantParams struct {
 
 func (q *Queries) ListWorkspacesByTenant(ctx context.Context, arg ListWorkspacesByTenantParams) ([]Workspace, error) {
 	rows, err := q.db.Query(ctx, listWorkspacesByTenant, arg.TenantID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Workspace
+	for rows.Next() {
+		var i Workspace
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.Settings,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspacesByUser = `-- name: ListWorkspacesByUser :many
+SELECT w.id, w.tenant_id, w.name, w.slug, w.settings, w.created_at FROM workspaces w
+JOIN workspace_members wm ON wm.workspace_id = w.id
+WHERE wm.user_id = $1
+ORDER BY w.created_at DESC
+`
+
+func (q *Queries) ListWorkspacesByUser(ctx context.Context, userID pgtype.UUID) ([]Workspace, error) {
+	rows, err := q.db.Query(ctx, listWorkspacesByUser, userID)
 	if err != nil {
 		return nil, err
 	}

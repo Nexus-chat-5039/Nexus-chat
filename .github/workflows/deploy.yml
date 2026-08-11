@@ -1,0 +1,137 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker Auth
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      # ── BUILD & DEPLOY API ──
+      - name: Build API
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-api:${{ github.sha }} -f services/nexus-api/Dockerfile .
+      - name: Push API
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-api:${{ github.sha }}
+      - name: Deploy API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: nexus-api
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-api:${{ github.sha }}
+          vpc_network: default
+          env_vars: |
+            ENV=production
+            PORT=8080
+          secrets: |
+            DATABASE_URL=DATABASE_URL:latest
+            REDIS_URL=REDIS_URL:latest
+            JWT_SECRET=JWT_SECRET:latest
+
+      # ── BUILD & DEPLOY SOCKET ──
+      - name: Build Socket
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-socket:${{ github.sha }} -f services/nexus-socket/Dockerfile .
+      - name: Push Socket
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-socket:${{ github.sha }}
+      - name: Deploy Socket
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: nexus-socket
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-socket:${{ github.sha }}
+          vpc_network: default
+          env_vars: |
+            ENV=production
+            PORT=3001
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+          secrets: |
+            DATABASE_URL=DATABASE_URL:latest
+            REDIS_URL=REDIS_URL:latest
+            JWT_SECRET=JWT_SECRET:latest
+
+      # ── BUILD & DEPLOY AI GATEWAY ──
+      - name: Build Gateway
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-ai-gateway:${{ github.sha }} -f services/nexus-ai-gateway/Dockerfile .
+      - name: Push Gateway
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-ai-gateway:${{ github.sha }}
+      - name: Deploy Gateway
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: nexus-ai-gateway
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-ai-gateway:${{ github.sha }}
+          vpc_network: default
+          env_vars: |
+            PORT=8081
+            GRPC_PORT=50052
+            GEMINI_MODELS=gemini-3.1-flash-lite
+          secrets: |
+            GEMINI_API_KEY=GEMINI_API_KEY:latest
+            REDIS_URL=REDIS_URL:latest
+
+      # ── BUILD & DEPLOY RAG (Python) ──
+      - name: Build RAG
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-rag:${{ github.sha }} -f services/nexus-rag/Dockerfile .
+      - name: Push RAG
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-rag:${{ github.sha }}
+      - name: Deploy RAG
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: nexus-rag
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-rag:${{ github.sha }}
+          flags: --memory=2Gi --cpu=2
+          env_vars: |
+            QDRANT_HOST=0861747e-3274-417e-ad39-76de14f44eb5.us-east4-0.gcp.cloud.qdrant.io
+            QDRANT_PORT=6333
+          secrets: |
+            QDRANT_API_KEY=QDRANT_API_KEY:latest
+
+      # ── BUILD & DEPLOY AI WORKER ──
+      # NOTE: This is temporarily commented out until Gateway and RAG are deployed
+      # so we can grab their URLs!
+      #
+      # - name: Build Worker
+      #   run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-ai-worker:${{ github.sha }} -f services/nexus-ai-worker/Dockerfile .
+      # - name: Push Worker
+      #   run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-ai-worker:${{ github.sha }}
+      # - name: Deploy Worker
+      #   uses: google-github-actions/deploy-cloudrun@v2
+      #   with:
+      #     service: nexus-ai-worker
+      #     region: ${{ env.REGION }}
+      #     image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/nexus-repo/nexus-ai-worker:${{ github.sha }}
+      #     vpc_network: default
+      #     flags: --no-allow-unauthenticated
+      #     env_vars: |
+      #       GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+      #       GATEWAY_URL=REPLACE_ME_AFTER_FIRST_DEPLOY:443
+      #       RAG_SERVICE_URL=REPLACE_ME_AFTER_FIRST_DEPLOY:443
+      #     secrets: |
+      #       DATABASE_URL=DATABASE_URL:latest
+      #       REDIS_URL=REDIS_URL:latest

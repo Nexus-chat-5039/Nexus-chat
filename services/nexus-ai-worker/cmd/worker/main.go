@@ -45,17 +45,17 @@ func main() {
 	}
 	defer orch.Close()
 
-	// 4. Initialize Stream Consumer
-	streamConsumer, err := consumer.NewStreamConsumer(redisClient.RedisClient(), cfg.StreamAIInference, cfg.ConsumerGroup, orch)
+	// 4. Initialize Pub/Sub Consumer
+	pubSubConsumer, err := consumer.NewPubSubConsumer(ctx, cfg.GCPProjectID, cfg.PubSubSubID, orch)
 	if err != nil {
-		log.Fatalf("Failed to initialize Stream consumer: %v", err)
+		log.Fatalf("Failed to initialize Pub/Sub consumer: %v", err)
 	}
-	defer streamConsumer.Close()
+	defer pubSubConsumer.Close()
 
 	// 5. Start Consumer in a goroutine
 	go func() {
-		if err := streamConsumer.Start(ctx); err != nil && ctx.Err() == nil {
-			log.Fatalf("Stream consumer error: %v", err)
+		if err := pubSubConsumer.Start(ctx); err != nil && ctx.Err() == nil {
+			log.Fatalf("Pub/Sub consumer error: %v", err)
 		}
 	}()
 

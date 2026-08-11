@@ -45,11 +45,12 @@ function registerMessagingHandlers(socket, io, pgPool) {
    *   tenantId: string,
    *   workspaceId: string,
    *   content: string,
-   *   triggerAI?: boolean
+   *   triggerAI?: boolean,
+   *   tempId?: string
    * }
    */
   socket.on('send_message', async (data, ack) => {
-    const { chatId, groupId, tenantId, workspaceId, content, triggerAI } = data;
+    const { chatId, groupId, tenantId, workspaceId, content, triggerAI, tempId } = data;
     const user = socket.data.user;
 
     // Validate required fields
@@ -105,11 +106,13 @@ function registerMessagingHandlers(socket, io, pgPool) {
 
       const message = {
         id: result.rows[0].id,
+        tempId,
         chatId,
         groupId,
         tenantId,
         workspaceId,
         userId,
+        userEmail: user?.email,
         userName: user?.name,
         userAvatar: user?.picture || '',
         role: 'user',
@@ -167,7 +170,7 @@ function registerMessagingHandlers(socket, io, pgPool) {
       if (typeof ack === 'function') ack({ success: true, messageId: message.id });
     } catch (err) {
       console.error('[messaging] send_message error:', err);
-      if (typeof ack === 'function') ack({ error: 'Failed to send message' });
+      if (typeof ack === 'function') ack({ error: 'Failed to send message: ' + (err.message || 'unknown error') });
     }
   });
 

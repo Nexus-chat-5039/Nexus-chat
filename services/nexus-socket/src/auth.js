@@ -6,7 +6,15 @@
 const jwt = require('jsonwebtoken');
 
 // Load JWT secret from environment
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecret-dev-key';
+const isProd = process.env.ENV === 'production';
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  if (isProd) {
+    console.error('Missing required environment variable in production: JWT_SECRET');
+    process.exit(1);
+  }
+  JWT_SECRET = 'supersecret-dev-key';
+}
 
 /**
  * Socket.IO middleware that verifies JWT tokens.

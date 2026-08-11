@@ -8,6 +8,7 @@ type UseMessagesArgs = {
   activeChatId: string
   activeGroupIdRef: MutableRefObject<string>
   activeChatIdRef: MutableRefObject<string>
+  groups: Group[]
   userEmail: string
   profileImage: string | null
   isConnected: boolean
@@ -24,6 +25,7 @@ export function useMessages({
   activeChatId,
   activeGroupIdRef,
   activeChatIdRef,
+  groups,
   userEmail,
   profileImage,
   isConnected,
@@ -36,63 +38,43 @@ export function useMessages({
   useEffect(() => {
     if (!isConnected) return
 
-    function onNewMessage(msg: Partial<Message> & { id?: string; content: string; role: "user" | "assistant" }) {
-      // If this is our own message echoed back, replace the temp ID with the real DB ID
-      if (msg.role === "user" && msg.sender === userEmail) {
-        if (msg.id) {
-          setGroups((prev) =>
-            prev.map((group) =>
-              group.id === activeGroupIdRef.current
-                ? {
-                    ...group,
-                    chats: group.chats.map((chat) =>
-                      chat.id === activeChatIdRef.current
-                        ? {
-                            ...chat,
-                            messages: chat.messages.map((m) =>
-                              m.id.startsWith("temp_") && m.content === msg.content && m.sender === userEmail
-                                ? { ...m, id: msg.id }
-                                : m
-                            ),
-                          }
-                        : chat
-                    ),
-                  }
-                : group
-            )
-          )
-        }
-        return
+    function onNewMessage(rawMsg: any) {
+      console.log("RECEIVED SOCKET MESSAGE:", rawMsg)
+      
+      const senderEmail = rawMsg.userEmail || rawMsg.userName || "Unknown"
+      console.log("DEDUPLICATION DEBUG:", { 
+        socketSender: senderEmail, 
+        localUserEmail: userEmail,
+        isMatch: senderEmail === userEmail
+      })
+      const msg: Message = {
+        id: rawMsg.id,
+        role: rawMsg.role || "user",
+        content: rawMsg.content,
+        sender: senderEmail,
+        sender_image: rawMsg.userAvatar || undefined,
+        created_at: rawMsg.createdAt,
       }
+      
+      const incomingTempId = rawMsg.tempId
 
+      const targetChatId = rawMsg.chatId
+
+      // Unified deduplication: if the message exists by exact ID, or matches an optimistic temp message (via tempId or fallback heuristics), replace it. Otherwise append.
       setGroups((prev) =>
-        prev.map((group) =>
-          group.id === activeGroupIdRef.current
-            ? {
-                ...group,
-                chats: group.chats.map((chat) =>
-                  chat.id === activeChatIdRef.current
-                    ? {
-                        ...chat,
-                        messages: [
-                          ...chat.messages,
-                          {
-                            id: msg.id || crypto.randomUUID(),
-                            role: msg.role,
-                            content: msg.content,
-                            sender: msg.sender,
-                            sender_name: msg.sender_name,
-                            sender_image: msg.sender_image,
-                            replyTo: msg.replyTo,
-                            is_deleted: msg.is_deleted,
-                          },
-                        ],
-                      }
-                    : chat
-                ),
-              }
-            : group
-        )
+        prev.map((group) => ({
+          ...group,
+          chats: group.chats.map((chat) =>
+            chat.id === targetChatId
+              ? {
+                  ...chat,
+                  messages: chat.messages.some((m) => m.id === msg.id || (incomingTempId && m.id === incomingTempId) || (m.id.startsWith("temp_") && m.content === msg.content && m.sender === msg.sender))
+                    ? chat.messages.map((m) => (m.id === msg.id || (incomingTempId && m.id === incomingTempId) || (m.id.startsWith("temp_") && m.content === msg.content && m.sender === msg.sender) ? { ...msg, id: msg.id } : m))
+                    : [...chat.messages, msg],
+                }
+              : chat
+          ),
+        }))
       )
     }
 
@@ -139,19 +121,66 @@ export function useMessages({
       )
     }
 
-    function onTyping() {
-      setIsTyping(true)
-      setTimeout(() => setIsTyping(false), 1500)
+    function onTyping(data?: { isTyping: boolean, name?: string, userId?: string }) {
+      setIsTyping(data ? data.isTyping : true)
+      if (!data || !data.isTyping) {
+        setTimeout(() => setIsTyping(false), 1500)
+      }
+    }
+
+    function onAiStreamChunk(data: { chatId: string; delta: string; isFinal: boolean; messageId: string }) {
+      if (data.chatId !== activeChatIdRef.current) return
+
+      setGroups((prev) =>
+        prev.map((group) =>
+          group.id === activeGroupIdRef.current
+            ? {
+                ...group,
+                chats: group.chats.map((chat) => {
+                  if (chat.id !== data.chatId) return chat
+
+                  const msgExists = chat.messages.some((m) => m.id === data.messageId)
+                  let newMessages = chat.messages
+
+                  if (!msgExists) {
+                    newMessages = [
+                      ...chat.messages,
+                      {
+                        id: data.messageId,
+                        role: "assistant",
+                        content: data.delta,
+                        sender: "Nexus AI",
+                        created_at: new Date().toISOString(),
+                      },
+                    ]
+                  } else {
+                    newMessages = chat.messages.map((m) =>
+                      m.id === data.messageId ? { ...m, content: m.content + data.delta } : m
+                    )
+                  }
+
+                  return { ...chat, messages: newMessages }
+                }),
+              }
+            : group
+        )
+      )
+
+      if (data.isFinal) {
+        setIsTyping(false)
+      }
     }
 
     socket.on("new_message", onNewMessage)
     socket.on("message_deleted", onMessageDeleted)
     socket.on("message_updated", onMessageUpdated)
     socket.on("typing", onTyping)
+    socket.on("typing_indicator", onTyping)
+    socket.on("ai_stream_chunk", onAiStreamChunk)
 
-    socket.emit("join_room", {
-      group_id: activeGroupId,
-      chat_id: activeChatId,
+    socket.emit("join_chat", {
+      groupId: activeGroupId,
+      chatId: activeChatId,
     })
 
     return () => {
@@ -159,9 +188,11 @@ export function useMessages({
       socket.off("message_deleted", onMessageDeleted)
       socket.off("message_updated", onMessageUpdated)
       socket.off("typing", onTyping)
-      socket.emit("leave_room", {
-        group_id: activeGroupId,
-        chat_id: activeChatId,
+      socket.off("typing_indicator", onTyping)
+      socket.off("ai_stream_chunk", onAiStreamChunk)
+      socket.emit("leave_chat", {
+        groupId: activeGroupId,
+        chatId: activeChatId,
       })
     }
   }, [activeGroupId, activeChatId, isConnected, userEmail, activeGroupIdRef, activeChatIdRef, setGroups])
@@ -180,19 +211,7 @@ export function useMessages({
                   ...group,
                   chats: group.chats.map((chat) =>
                     chat.id === activeChatId
-                      ? {
-                          ...chat,
-                          messages: data.map((m: Record<string, unknown>) => ({
-                            id: (m._id as string) || (m.id as string) || crypto.randomUUID(),
-                            role: m.role as "user" | "assistant",
-                            content: m.content as string,
-                            sender: (m.sender as string) || (m.user_id as string),
-                            sender_name: m.sender_name as string | undefined,
-                            sender_image: m.sender_image as string | undefined,
-                            replyTo: m.replyTo as Message["replyTo"],
-                            is_deleted: m.is_deleted as boolean | undefined,
-                          })),
-                        }
+                      ? { ...chat, messages: data }
                       : chat
                   ),
                 }
@@ -213,6 +232,9 @@ export function useMessages({
     (text: string, triggerAi: boolean = false, replyTo?: Message["replyTo"]) => {
       if (!text.trim()) return
 
+      const activeGroup = groups.find((g) => g.id === activeGroupIdRef.current)
+      const tempId = "temp_" + crypto.randomUUID()
+
       setGroups((prev) =>
         prev.map((group) =>
           group.id === activeGroupIdRef.current
@@ -225,7 +247,7 @@ export function useMessages({
                         messages: [
                           ...chat.messages,
                           {
-                            id: "temp_" + crypto.randomUUID(),
+                            id: tempId,
                             role: "user" as const,
                             content: text,
                             sender: userEmail,
@@ -242,23 +264,30 @@ export function useMessages({
       )
 
       socket.emit("send_message", {
-        group_id: activeGroupIdRef.current,
-        chat_id: activeChatIdRef.current,
+        groupId: activeGroupIdRef.current,
+        chatId: activeChatIdRef.current,
+        tenantId: activeGroup?.tenant_id || "",
+        workspaceId: activeGroup?.workspace_id || "",
         content: text,
-        trigger_ai: triggerAi,
+        triggerAI: triggerAi,
         replyTo,
+        tempId,
+      }, (ack: any) => {
+        if (ack?.error) {
+          console.error("Message send failed:", ack.error)
+        }
       })
     },
-    [userEmail, profileImage, activeGroupIdRef, activeChatIdRef, setGroups]
+    [userEmail, profileImage, activeGroupIdRef, activeChatIdRef, groups, setGroups]
   )
 
   const deleteMessage = useCallback(
     (messageId: string, type: "everyone" | "me") => {
       socket.emit("delete_message", {
-        message_id: messageId,
-        delete_type: type,
-        group_id: activeGroupIdRef.current,
-        chat_id: activeChatIdRef.current,
+        messageId: messageId,
+        deleteType: type,
+        groupId: activeGroupIdRef.current,
+        chatId: activeChatIdRef.current,
       })
 
       setGroups((prev) =>
@@ -292,10 +321,10 @@ export function useMessages({
   const editMessage = useCallback(
     (messageId: string, content: string) => {
       socket.emit("edit_message", {
-        message_id: messageId,
+        messageId: messageId,
         content,
-        group_id: activeGroupIdRef.current,
-        chat_id: activeChatIdRef.current,
+        groupId: activeGroupIdRef.current,
+        chatId: activeChatIdRef.current,
       })
 
       setGroups((prev) =>

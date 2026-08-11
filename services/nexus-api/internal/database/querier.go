@@ -11,25 +11,58 @@ import (
 )
 
 type Querier interface {
+	// ============================================================
+	// Group Members
+	// ============================================================
+	AddGroupMember(ctx context.Context, arg AddGroupMemberParams) error
 	AddWorkspaceMember(ctx context.Context, arg AddWorkspaceMemberParams) error
+	// ============================================================
+	// Chat Queries
+	// ============================================================
 	CreateChat(ctx context.Context, arg CreateChatParams) (Chat, error)
+	// ============================================================
+	// Group Queries
+	// ============================================================
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
+	// ============================================================
+	// Group Invites
+	// ============================================================
+	CreateInvite(ctx context.Context, arg CreateInviteParams) (GroupInvite, error)
+	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
-	DeleteGroup(ctx context.Context, id pgtype.UUID) error
+	DeleteChat(ctx context.Context, id pgtype.UUID) error
 	GetChatByID(ctx context.Context, id pgtype.UUID) (Chat, error)
 	GetGroupByID(ctx context.Context, id pgtype.UUID) (Group, error)
+	GetGroupByInviteCode(ctx context.Context, inviteCode pgtype.Text) (Group, error)
+	GetGroupMember(ctx context.Context, arg GetGroupMemberParams) (GroupMember, error)
+	GetInviteByCode(ctx context.Context, code string) (GroupInvite, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	GetWorkspaceByID(ctx context.Context, id pgtype.UUID) (Workspace, error)
 	GetWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error)
 	GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMemberParams) (WorkspaceMember, error)
+	IncrementInviteUseCount(ctx context.Context, code string) (int32, error)
+	// ============================================================
+	// Audit Log
+	// ============================================================
+	InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error
+	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]GroupAuditLog, error)
 	ListChatsByGroup(ctx context.Context, groupID pgtype.UUID) ([]Chat, error)
-	ListGroupsByWorkspace(ctx context.Context, arg ListGroupsByWorkspaceParams) ([]Group, error)
-	ListMessagesByChat(ctx context.Context, arg ListMessagesByChatParams) ([]Message, error)
+	ListGroupMembers(ctx context.Context, groupID pgtype.UUID) ([]ListGroupMembersRow, error)
+	ListGroupsByUser(ctx context.Context, userID pgtype.UUID) ([]Group, error)
+	ListInvitesByGroup(ctx context.Context, groupID pgtype.UUID) ([]GroupInvite, error)
+	// ============================================================
+	// Message Queries
+	// ============================================================
+	ListMessagesByChat(ctx context.Context, arg ListMessagesByChatParams) ([]ListMessagesByChatRow, error)
 	ListWorkspaceMembers(ctx context.Context, workspaceID pgtype.UUID) ([]ListWorkspaceMembersRow, error)
 	ListWorkspacesByTenant(ctx context.Context, arg ListWorkspacesByTenantParams) ([]Workspace, error)
+	ListWorkspacesByUser(ctx context.Context, userID pgtype.UUID) ([]Workspace, error)
+	RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberParams) error
 	RemoveWorkspaceMember(ctx context.Context, arg RemoveWorkspaceMemberParams) error
+	RevokeInvite(ctx context.Context, arg RevokeInviteParams) error
+	SoftDeleteGroup(ctx context.Context, arg SoftDeleteGroupParams) error
 	UpdateGroupAI(ctx context.Context, arg UpdateGroupAIParams) error
 	UpdateLastSeen(ctx context.Context, id pgtype.UUID) error
 }

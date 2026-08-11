@@ -31,9 +31,9 @@ export function useGroups({
     try {
       const res = await apiClient.post("/api/groups", { name })
       const newGroup: Group = {
-        ...res.data,
-        members: res.data.members || [],
-        chats: res.data.chats.map((c: Chat) => ({ ...c, messages: [] })),
+        ...res.data.group,
+        members: res.data.group?.members || [],
+        chats: (res.data.group?.chats || []).map((c: any) => ({ ...c, messages: [] })),
       }
       setGroups((prev) => [...prev, newGroup])
       setActiveGroupId(newGroup.id)
@@ -47,9 +47,13 @@ export function useGroups({
   const createChat = useCallback(async (title: string) => {
     if (!title) return
     const currentGroupId = activeGroupIdRef.current
+    if (!currentGroupId) {
+      setError("No active group selected")
+      return
+    }
     try {
-      const res = await apiClient.post(`/api/groups/${currentGroupId}/chats`, { title })
-      const newChat: Chat = { ...res.data, messages: [] }
+      const res = await apiClient.post("/api/chats", { title, group_id: currentGroupId })
+      const newChat: Chat = { ...res.data.chat, messages: [] }
       setGroups((prev) =>
         prev.map((g) =>
           g.id === currentGroupId ? { ...g, chats: [...g.chats, newChat] } : g
@@ -113,24 +117,29 @@ export function useGroups({
     [activeChatIdRef, groups, setGroups, setActiveChatId, setError]
   )
 
-  const joinGroup = useCallback(async (groupId: string) => {
-    if (!groupId) return
+  const joinGroup = useCallback(async (code: string) => {
+    if (!code) return
     try {
-      const res = await apiClient.post("/api/groups/join", { group_id: groupId })
+      const res = await apiClient.post("/api/groups/join", { code: code.toUpperCase().trim() })
       const newGroup: Group = {
-        id: res.data.group_id,
-        name: res.data.name,
-        members: [userEmail],
-        chats: [{ id: "general", title: "General", messages: [] }],
+        ...res.data.group,
+        members: res.data.group?.members || [],
+        chats: (res.data.group?.chats || []).map((c: any) => ({ ...c, messages: [] })),
       }
-      setGroups((prev) => [...prev, newGroup])
+      setGroups((prev) => {
+        // Prevent duplicates if already joined
+        if (prev.some((g) => g.id === newGroup.id)) return prev
+        return [...prev, newGroup]
+      })
       setActiveGroupId(newGroup.id)
-      setActiveChatId("general")
+      if (newGroup.chats.length > 0) {
+        setActiveChatId(newGroup.chats[0].id)
+      }
     } catch (err) {
       console.error(err)
-      setError("Failed to join group. Check the ID.")
+      setError("Failed to join group. Check the invite code.")
     }
-  }, [userEmail, setGroups, setActiveGroupId, setActiveChatId, setError])
+  }, [setGroups, setActiveGroupId, setActiveChatId, setError])
 
   const leaveGroup = useCallback(
     async (groupId: string) => {

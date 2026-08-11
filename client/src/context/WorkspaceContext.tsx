@@ -31,7 +31,7 @@ type WorkspaceContextType = {
   createChat: (title: string) => Promise<void>
   deleteGroup: (groupId: string) => Promise<void>
   deleteChat: (groupId: string, chatId: string) => Promise<void>
-  joinGroup: (groupId: string) => Promise<void>
+  joinGroup: (code: string) => Promise<void>
   leaveGroup: (groupId: string) => Promise<void>
   removeMember: (groupId: string, email: string) => Promise<void>
   deleteMessage: (messageId: string, type: "everyone" | "me") => void
@@ -43,14 +43,14 @@ type WorkspaceContextType = {
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null)
 
-const EMPTY_CHAT: Chat = { id: "null", title: "", messages: [] }
+const EMPTY_CHAT: Chat = { id: "", title: "", messages: [] }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { token, userEmail, username } = useAuthStore()
 
   const [groups, setGroups] = useState<Group[]>([])
   const [activeGroupId, setActiveGroupId] = useState("")
-  const [activeChatId, setActiveChatId] = useState("general")
+  const [activeChatId, setActiveChatId] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -81,25 +81,37 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       .catch(console.error)
   }, [token])
 
-  // Fetch groups
+  // Fetch groups (no more dummy tenant/workspace IDs)
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      setGroups([])
+      setActiveGroupId("")
+      setActiveChatId("")
+      return
+    }
 
     async function fetchGroups() {
       try {
         setIsLoading(true)
         const res = await apiClient.get("/api/groups")
-        if (res.data.length > 0) {
-          const loadedGroups: Group[] = res.data.map((g: Group) => ({
+        if (res.data.groups && res.data.groups.length > 0) {
+          const loadedGroups: Group[] = res.data.groups.map((g: Group) => ({
             ...g,
-            chats: g.chats.map((c: Chat) => ({ ...c, messages: [] })),
+            members: g.members || [],
+            chats: g.chats ? g.chats.map((c: Chat) => ({ ...c, messages: [] })) : [],
           }))
           setGroups(loadedGroups)
 
-          if (!loadedGroups.find((g) => g.id === activeGroupIdRef.current)) {
+          const currentGroup = loadedGroups.find((g) => g.id === activeGroupIdRef.current)
+          if (!currentGroup) {
             setActiveGroupId(loadedGroups[0].id)
             if (loadedGroups[0].chats.length > 0) {
               setActiveChatId(loadedGroups[0].chats[0].id)
+            }
+          } else {
+            const hasActiveChat = currentGroup.chats.some((c) => c.id === activeChatIdRef.current)
+            if (!hasActiveChat && currentGroup.chats.length > 0) {
+              setActiveChatId(currentGroup.chats[0].id)
             }
           }
         }
@@ -154,6 +166,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     activeChatId,
     activeGroupIdRef,
     activeChatIdRef,
+    groups,
     userEmail,
     profileImage,
     isConnected,

@@ -12,13 +12,23 @@ build-all:
 	cd services/nexus-billing && go build -o bin/billing ./cmd/billing
 	@echo "Build complete."
 
-# Run docker-compose up
+# Build production docker images locally
+build-prod:
+	@echo "Building production Docker images..."
+	docker compose -f docker-compose.prod.yml build
+
+# Run docker-compose up for development
 up:
 	docker compose up -d
+
+# Run production docker-compose
+prod-up:
+	docker compose -f docker-compose.prod.yml up -d
 
 # Run docker-compose down
 down:
 	docker compose down
+	docker compose -f docker-compose.prod.yml down
 
 # Run tests
 test:
