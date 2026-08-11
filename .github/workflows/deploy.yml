@@ -48,6 +48,7 @@ jobs:
           env_vars: |
             ENV=production
             PORT=8080
+            CORS_ORIGIN=http://localhost:5173
           secrets: |
             DATABASE_URL=DATABASE_URL:latest
             REDIS_URL=REDIS_URL:latest
@@ -69,6 +70,7 @@ jobs:
             ENV=production
             PORT=3001
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            CORS_ORIGIN=http://localhost:5173
           secrets: |
             DATABASE_URL=DATABASE_URL:latest
             REDIS_URL=REDIS_URL:latest
