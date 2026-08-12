@@ -10,7 +10,7 @@ const isProd = process.env.ENV === 'production';
 function getEnvOrFallback(key, fallback) {
   const v = process.env[key];
   if (!v) {
-    if (isProd && fallback !== undefined) {
+    if (isProd && fallback === undefined) {
       console.error(`Missing required environment variable in production: ${key}`);
       process.exit(1);
     }

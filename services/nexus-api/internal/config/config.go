@@ -35,7 +35,7 @@ func getEnv(key, fallback string) string {
 func getEnvOrFallback(isProd bool, key, fallback string) string {
 	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
-		if isProd {
+		if isProd && fallback == "" {
 			panic("Missing required environment variable in production: " + key)
 		}
 		return fallback
