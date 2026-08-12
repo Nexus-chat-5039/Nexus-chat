@@ -1,18 +1,15 @@
 # Build Stage
-FROM golang:1.26-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
 RUN apk add --no-cache git ca-certificates
 
-COPY services/nexus-api/go.mod services/nexus-api/go.sum ./services/nexus-api/
-WORKDIR /app/services/nexus-api
+COPY go.mod go.sum ./
 RUN go mod download
 
-WORKDIR /app
-COPY services/nexus-api/ services/nexus-api/
+COPY . .
 
-WORKDIR /app/services/nexus-api
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/api ./cmd/api
 
 # Final Stage
