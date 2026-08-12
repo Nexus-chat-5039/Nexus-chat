@@ -1,6 +1,6 @@
 module nexus/services/nexus-ai-worker
 
-go 1.25.8
+go 1.23.0
 
 require (
 	cloud.google.com/go/pubsub v1.50.2

@@ -18,4 +18,4 @@ env
 services/nexus-ai-gateway/gateway
 services/nexus-ai-worker/worker
 services/nexus-billing/billing
-services/nexus-api/api
+services/nexus-api/api.env.local
