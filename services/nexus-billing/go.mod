@@ -1,6 +1,6 @@
 module nexus/services/nexus-billing
 
-go 1.26.4
+go 1.23.0
 
 require (
 	cloud.google.com/go/bigquery v1.77.0
