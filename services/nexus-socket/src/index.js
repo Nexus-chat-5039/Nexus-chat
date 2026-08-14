@@ -102,8 +102,30 @@ async function main() {
   }
 
   // ---- PostgreSQL Pool ----
-  pgPool = new Pool({ connectionString: config.DATABASE_URL });
+  let poolConfig = {};
+  const dbUrl = (config.DATABASE_URL || '').trim();
+  if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+    poolConfig.connectionString = dbUrl;
+  } else if (dbUrl.includes('=')) {
+    // Parse key-value DSN (e.g. host=/cloudsql/... user=postgres password=... dbname=nexus)
+    dbUrl.split(/\s+/).forEach(pair => {
+      const idx = pair.indexOf('=');
+      if (idx !== -1) {
+        const k = pair.substring(0, idx);
+        const v = pair.substring(idx + 1);
+        if (k === 'host') poolConfig.host = v;
+        if (k === 'user') poolConfig.user = v;
+        if (k === 'password') poolConfig.password = v;
+        if (k === 'dbname') poolConfig.database = v;
+        if (k === 'port') poolConfig.port = parseInt(v, 10);
+      }
+    });
+  } else {
+    poolConfig.connectionString = dbUrl;
+  }
+  pgPool = new Pool(poolConfig);
   pgPool.on('error', (err) => console.error('[postgres] Pool error:', err.message));
+
 
   try {
     const client = await pgPool.connect();
