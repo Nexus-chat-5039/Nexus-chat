@@ -23,14 +23,27 @@ func NewClient(ctx context.Context, databaseURL string) (*Client, error) {
 	config.MinConns = 2
 	config.MaxConnLifetime = time.Hour
 
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create pool: %w", err)
+	var pool *pgxpool.Pool
+	maxRetries := 10
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		var err error
+		pool, err = pgxpool.NewWithConfig(ctx, config)
+		if err == nil {
+			pingCtx, pingCancel := context.WithTimeout(ctx, 3*time.Second)
+			err = pool.Ping(pingCtx)
+			pingCancel()
+			if err == nil {
+				break
+			}
+			pool.Close()
+		}
+
+		if attempt == maxRetries {
+			return nil, fmt.Errorf("failed to ping database after %d attempts: %w", maxRetries, err)
+		}
+		time.Sleep(2 * time.Second)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
 
 	queries := New(pool)
 

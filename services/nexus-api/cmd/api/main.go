@@ -25,17 +25,32 @@ func main() {
 
 	log.Println("Starting nexus-api...")
 
-	// ---- Database ----
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+	// ---- Database with Cloud SQL Startup Retry Loop ----
+	var pool *pgxpool.Pool
+	maxRetries := 10
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		log.Printf("Connecting to PostgreSQL (attempt %d/%d)...", attempt, maxRetries)
+		var err error
+		pool, err = pgxpool.New(ctx, cfg.DatabaseURL)
+		if err == nil {
+			pingCtx, pingCancel := context.WithTimeout(ctx, 3*time.Second)
+			err = pool.Ping(pingCtx)
+			pingCancel()
+			if err == nil {
+				log.Println("✅ Successfully connected and pinged PostgreSQL.")
+				break
+			}
+			pool.Close()
+		}
+
+		log.Printf("Database connection attempt %d failed: %v", attempt, err)
+		if attempt == maxRetries {
+			log.Fatalf("Fatal: Failed to connect to database after %d attempts: %v", maxRetries, err)
+		}
+		time.Sleep(2 * time.Second)
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		log.Fatalf("Failed to ping database: %v", err)
-	}
-	log.Println("Connected to PostgreSQL.")
 
 	queries := database.New(pool)
 
