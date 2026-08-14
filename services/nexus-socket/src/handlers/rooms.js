@@ -19,8 +19,12 @@ function registerRoomHandlers(socket, io) {
 
     const room = `chat:${chatId}`;
     socket.join(room);
+    if (groupId) {
+      socket.join(`group:${groupId}`);
+    }
 
-    console.log(`[rooms] ${socket.data.user?.email} joined ${room}`);
+    console.log(`[rooms] ${socket.data.user?.email} joined ${room}${groupId ? ` and group:${groupId}` : ''}`);
+
 
     // Notify others in the room
     socket.to(room).emit('user_joined', {

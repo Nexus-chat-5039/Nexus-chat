@@ -52,12 +52,19 @@ func main() {
 	}
 	defer pubSubConsumer.Close()
 
-	// 5. Start Consumer in a goroutine
+	// 5. Start Consumers in goroutines
 	go func() {
 		if err := pubSubConsumer.Start(ctx); err != nil && ctx.Err() == nil {
-			log.Fatalf("Pub/Sub consumer error: %v", err)
+			log.Fatalf("Pub/Sub inference consumer error: %v", err)
 		}
 	}()
+
+	go func() {
+		if err := pubSubConsumer.StartEmbedConsumer(ctx, cfg.PubSubEmbedSubID); err != nil && ctx.Err() == nil {
+			log.Fatalf("Pub/Sub embed consumer error: %v", err)
+		}
+	}()
+
 
 	// 6. Wait for Termination Signal
 	sigChan := make(chan os.Signal, 1)

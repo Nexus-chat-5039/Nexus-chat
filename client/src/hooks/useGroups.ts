@@ -5,7 +5,6 @@ import type { Chat, Group } from "../types"
 type UseGroupsArgs = {
   activeGroupIdRef: MutableRefObject<string>
   activeChatIdRef: MutableRefObject<string>
-  userEmail: string
   groups: Group[]
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>
   setActiveGroupId: (id: string) => void
@@ -19,7 +18,6 @@ type UseGroupsArgs = {
 export function useGroups({
   activeGroupIdRef,
   activeChatIdRef,
-  userEmail,
   groups,
   setGroups,
   setActiveGroupId,
@@ -33,7 +31,11 @@ export function useGroups({
       const newGroup: Group = {
         ...res.data.group,
         members: res.data.group?.members || [],
-        chats: (res.data.group?.chats || []).map((c: any) => ({ ...c, messages: [] })),
+        chats: (res.data.group?.chats || []).map((c: { id: string; title: string }) => ({
+          id: c.id,
+          title: c.title,
+          messages: [],
+        })),
       }
       setGroups((prev) => [...prev, newGroup])
       setActiveGroupId(newGroup.id)
@@ -124,7 +126,11 @@ export function useGroups({
       const newGroup: Group = {
         ...res.data.group,
         members: res.data.group?.members || [],
-        chats: (res.data.group?.chats || []).map((c: any) => ({ ...c, messages: [] })),
+        chats: (res.data.group?.chats || []).map((c: { id: string; title: string }) => ({
+          id: c.id,
+          title: c.title,
+          messages: [],
+        })),
       }
       setGroups((prev) => {
         // Prevent duplicates if already joined

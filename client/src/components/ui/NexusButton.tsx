@@ -15,6 +15,7 @@ export default function NexusButton({
   children,
   loading = false,
   fullWidth = false,
+  type = "button",
   className,
   disabled,
   ...props
@@ -34,12 +35,14 @@ export default function NexusButton({
 
   return (
     <button
+      type={type}
+      aria-busy={loading}
       className={cn(
         "relative inline-flex items-center justify-center gap-2 font-semibold rounded-xl",
         "transition-all duration-200 ease-out",
         "active:scale-[0.97] active:duration-100",
         "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
-        "focus:outline-none focus:ring-2 focus:ring-nexus-primary/40 focus:ring-offset-2 focus:ring-offset-nexus-bg",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-nexus-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-nexus-bg",
         variants[variant],
         sizes[size],
         fullWidth && "w-full",
@@ -56,7 +59,9 @@ export default function NexusButton({
           </svg>
         </span>
       )}
-      <span className={cn(loading && "opacity-0")}>{children}</span>
+      <span className={cn("inline-flex items-center justify-center gap-2", loading && "opacity-0")}>
+        {children}
+      </span>
     </button>
   )
 }

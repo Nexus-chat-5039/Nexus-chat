@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "../stores/authStore"
 import { useWorkspace } from "../context/WorkspaceContext"
 import { getProfile, updateProfile } from "../api/auth"
-import { API_URL, getImageUrl } from "../api/config"
+import { getImageUrl } from "../api/config"
 import {
   ArrowLeft, Key, Lock, Bell, Palette, Shield, LogOut,
   ChevronRight, Moon, Sun, Monitor
@@ -16,7 +16,7 @@ type Section = "account" | "privacy" | "notifications" | "appearance"
 
 export default function Settings() {
   const { logout, token } = useAuthStore()
-  const { username, userEmail } = useWorkspace()
+  const { username } = useWorkspace()
   const navigate = useNavigate()
 
   const [activeSection, setActiveSection] = useState<Section>("account")

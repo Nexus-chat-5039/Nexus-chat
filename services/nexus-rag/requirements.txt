@@ -1,16 +1,16 @@
 # gRPC
-grpcio==1.62.1
-grpcio-tools==1.62.1
+grpcio>=1.66.0
+grpcio-tools>=1.66.0
 
 # Vector store
-qdrant-client==1.12.1
+qdrant-client>=1.12.1
 
 # ML models (BGE-M3 + BGE-Reranker)
-FlagEmbedding==1.2.9
-torch==2.2.1
-transformers==4.39.2
+FlagEmbedding>=1.2.9
+transformers<5.0.0
+numpy<2.0.0
 
 # HTTP server (health/readiness probes)
-fastapi==0.110.0
-uvicorn==0.29.0
-pydantic==2.6.4
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pydantic>=2.6.4

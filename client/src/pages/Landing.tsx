@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import logo from "../assets/logo.svg"
 import { 
   ArrowRight, Sparkles, Brain, Zap, Search, Users, Network, Lock,
-  MessageSquare, ChevronDown, Github, Shield, CheckCircle2
+  ChevronDown, Github, Shield, CheckCircle2
 } from "lucide-react"
 import AmbientBackground from "../components/AmbientBackground"
 import NexusButton from "../components/ui/NexusButton"
@@ -375,13 +375,13 @@ export default function Landing() {
         className="fixed top-0 left-0 right-0 z-50 px-6 md:px-8 h-16 flex items-center justify-between border-b border-transparent transition-all duration-300"
       >
         <div className="flex items-center gap-3">
-          <img src={logo} alt="Nexus" className="h-8 w-8 rounded-lg bg-nexus-primary p-1 shadow-sm" />
+          <img src={logo} alt="Nexus Chat" width="32" height="32" className="h-8 w-8 rounded-lg bg-nexus-primary p-1 shadow-sm" />
           <span className="font-bold text-lg tracking-tight text-white">Nexus</span>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate("/login")}
-            className="text-sm font-medium text-[#6b7280] hover:text-white px-4 py-2 rounded-xl hover:bg-[#161616] transition-all duration-200"
+            className="text-sm font-medium text-[#9CA3AF] hover:text-white px-4 py-2 rounded-xl hover:bg-[#161616] transition-all duration-200"
           >
             Login
           </button>
@@ -392,7 +392,7 @@ export default function Landing() {
       </header>
 
       {/* Hero */}
-      <main className="relative z-10 flex flex-col items-center pt-32 pb-20 px-4">
+      <main id="main-content" tabIndex={-1} className="relative z-10 flex flex-col items-center pt-32 pb-20 px-4 focus:outline-none">
         <div className="max-w-3xl mx-auto text-center space-y-8">
           <div className="hero-badge">
             <NexusBadge variant="primary" icon={<Sparkles className="w-3.5 h-3.5" />}>
@@ -400,16 +400,11 @@ export default function Landing() {
             </NexusBadge>
           </div>
 
-          <div className="hero-headline space-y-2">
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-white">
-              Team chat where the AI
-            </h1>
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-[#e03c31]">
-              actually remembers stuff
-            </h1>
-          </div>
+          <h1 className="hero-headline text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-white">
+            Team chat where the AI <span className="text-[#e03c31] block">actually remembers stuff</span>
+          </h1>
 
-          <p className="hero-sub text-lg md:text-xl text-[#6b7280] max-w-xl mx-auto leading-relaxed">
+          <p className="hero-sub text-lg md:text-xl text-[#9CA3AF] max-w-xl mx-auto leading-relaxed">
             Nexus is a workspace where your conversations aren't just stored — they're understood. 
             The AI reads the room, remembers past discussions, and jumps in when it has something useful.
           </p>
@@ -624,21 +619,27 @@ export default function Landing() {
         <div className="w-full rounded-3xl border border-[#2a2a2a] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#e03c31]/15 via-[#161616] to-[#161616] p-12 md:p-20 text-center overflow-hidden relative">
           <div className="relative z-10 max-w-3xl mx-auto space-y-8">
             <h2 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight">Want to give it a spin?</h2>
-            <p className="text-[#6b7280] text-lg md:text-xl">It's free, open-source, and takes about 5 minutes to set up. No credit card, no sales calls.</p>
+            <p className="text-[#9CA3AF] text-lg md:text-xl">It's free, open-source, and takes about 5 minutes to set up. No credit card, no sales calls.</p>
             
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <button 
                 onClick={() => navigate("/signup")}
-                className="w-full sm:w-auto px-8 py-3.5 bg-[#e03c31] hover:bg-[#e03c31]/90 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors"
+                className="w-full sm:w-auto px-8 py-3.5 bg-[#e03c31] hover:bg-[#e03c31]/90 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-[#e03c31]"
               >
                 Create an account <ArrowRight className="w-5 h-5" />
               </button>
-              <button className="w-full sm:w-auto px-8 py-3.5 bg-transparent border border-[#2a2a2a] hover:border-[#6b7280] text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors">
+              <a 
+                href="https://github.com/Rajat25022005/Nexus-chat"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View source code on GitHub"
+                className="w-full sm:w-auto px-8 py-3.5 bg-transparent border border-[#2a2a2a] hover:border-[#9CA3AF] text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-nexus-border"
+              >
                 <Github className="w-5 h-5" /> Check out the repo
-              </button>
+              </a>
             </div>
             
-            <p className="text-xs text-[#6b7280] pt-4">MIT Licensed · Self-hostable · PRs welcome</p>
+            <p className="text-xs text-[#9CA3AF] pt-4">MIT Licensed · Self-hostable · PRs welcome</p>
           </div>
         </div>
       </section>
@@ -648,43 +649,43 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
           <div className="col-span-1 md:col-span-1">
             <div className="flex items-center gap-3 mb-4">
-              <img src={logo} alt="Nexus" className="h-8 w-8 rounded-lg bg-[#e03c31] p-1 shadow-sm" />
+              <img src={logo} alt="Nexus Chat logo" width="32" height="32" className="h-8 w-8 rounded-lg bg-[#e03c31] p-1 shadow-sm" />
               <span className="font-bold text-lg tracking-tight text-white">Nexus</span>
             </div>
-            <p className="text-[#6b7280] text-sm">Team chat with AI that actually pays attention.</p>
+            <p className="text-[#9CA3AF] text-sm">Team chat with AI that actually pays attention.</p>
           </div>
           
           <div>
             <h4 className="text-white font-semibold mb-4">Product</h4>
-            <ul className="space-y-3 text-sm text-[#6b7280]">
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">Features</a></li>
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">Documentation</a></li>
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">Roadmap</a></li>
+            <ul className="space-y-3 text-sm text-[#9CA3AF]">
+              <li><button onClick={() => navigate("/signup")} className="hover:text-[#e03c31] transition-colors">Features</button></li>
+              <li><button onClick={() => navigate("/login")} className="hover:text-[#e03c31] transition-colors">Sign In</button></li>
+              <li><button onClick={() => navigate("/signup")} className="hover:text-[#e03c31] transition-colors">Get Started</button></li>
             </ul>
           </div>
 
           <div>
             <h4 className="text-white font-semibold mb-4">Resources</h4>
-            <ul className="space-y-3 text-sm text-[#6b7280]">
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">GitHub</a></li>
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">Changelog</a></li>
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">API Reference</a></li>
+            <ul className="space-y-3 text-sm text-[#9CA3AF]">
+              <li><a href="https://github.com/Rajat25022005/Nexus-chat" target="_blank" rel="noopener noreferrer" className="hover:text-[#e03c31] transition-colors">GitHub Repository</a></li>
+              <li><a href="https://github.com/Rajat25022005/Nexus-chat#readme" target="_blank" rel="noopener noreferrer" className="hover:text-[#e03c31] transition-colors">Documentation</a></li>
+              <li><a href="https://github.com/Rajat25022005/Nexus-chat/releases" target="_blank" rel="noopener noreferrer" className="hover:text-[#e03c31] transition-colors">Changelog</a></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="text-white font-semibold mb-4">Company</h4>
-            <ul className="space-y-3 text-sm text-[#6b7280]">
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">About Us</a></li>
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">MIT License</a></li>
-              <li><a href="#" className="hover:text-[#e03c31] transition-colors">Contact</a></li>
+            <h4 className="text-white font-semibold mb-4">About</h4>
+            <ul className="space-y-3 text-sm text-[#9CA3AF]">
+              <li><a href="https://github.com/Rajat25022005/Nexus-chat/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="hover:text-[#e03c31] transition-colors">MIT License</a></li>
+              <li><a href="https://github.com/Rajat25022005" target="_blank" rel="noopener noreferrer" className="hover:text-[#e03c31] transition-colors">Creator</a></li>
+              <li><button onClick={() => navigate("/signup")} className="hover:text-[#e03c31] transition-colors">Contact</button></li>
             </ul>
           </div>
         </div>
 
-        <div className="max-w-6xl mx-auto pt-8 border-t border-[#2a2a2a]/40 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-[#6b7280]">
+        <div className="max-w-6xl mx-auto pt-8 border-t border-[#2a2a2a]/40 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-[#9CA3AF]">
           <p>© 2025 Nexus · MIT License</p>
-          <p>Built with too much coffee and FastAPI + React</p>
+          <p>Built with FastAPI + React</p>
         </div>
       </footer>
 
@@ -697,8 +698,4 @@ export default function Landing() {
       `}</style>
     </div>
   )
-}
-
-function cn(...classes: (string | undefined | false)[]) {
-  return classes.filter(Boolean).join(" ")
 }

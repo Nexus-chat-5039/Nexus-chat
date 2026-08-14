@@ -520,8 +520,37 @@ func (q *Queries) ListInvitesByGroup(ctx context.Context, groupID pgtype.UUID) (
 }
 
 const listMessagesByChat = `-- name: ListMessagesByChat :many
-
-SELECT m.id, m.tenant_id, m.workspace_id, m.group_id, m.chat_id, m.user_id, m.role, m.content, m.reply_to, m.reactions, m.is_deleted, m.is_edited, m.created_at, m.updated_at, u.email as user_email, u.display_name, u.avatar_url 
+SELECT 
+  m.id, 
+  m.tenant_id, 
+  m.workspace_id, 
+  m.group_id, 
+  m.chat_id, 
+  m.user_id, 
+  m.role, 
+  m.content, 
+  m.reply_to, 
+  m.is_deleted, 
+  m.is_edited, 
+  COALESCE(m.thread_count, 0)::int AS thread_count,
+  m.thread_last_reply_at,
+  m.created_at, 
+  m.updated_at, 
+  u.email as user_email, 
+  u.display_name, 
+  u.avatar_url,
+  COALESCE(
+    (
+      SELECT jsonb_object_agg(r.emoji, r.user_emails)
+      FROM (
+        SELECT emoji, jsonb_agg(user_email) as user_emails
+        FROM message_reactions
+        WHERE message_id = m.id
+        GROUP BY emoji
+      ) r
+    ),
+    '{}'::jsonb
+  ) AS reactions
 FROM messages m
 LEFT JOIN users u ON m.user_id = u.id
 WHERE m.chat_id = $1 AND m.is_deleted = false
@@ -536,23 +565,25 @@ type ListMessagesByChatParams struct {
 }
 
 type ListMessagesByChatRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	GroupID     pgtype.UUID        `json:"group_id"`
-	ChatID      pgtype.UUID        `json:"chat_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Role        string             `json:"role"`
-	Content     string             `json:"content"`
-	ReplyTo     []byte             `json:"reply_to"`
-	Reactions   []byte             `json:"reactions"`
-	IsDeleted   bool               `json:"is_deleted"`
-	IsEdited    bool               `json:"is_edited"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	UserEmail   pgtype.Text        `json:"user_email"`
-	DisplayName pgtype.Text        `json:"display_name"`
-	AvatarUrl   pgtype.Text        `json:"avatar_url"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	GroupID           pgtype.UUID        `json:"group_id"`
+	ChatID            pgtype.UUID        `json:"chat_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	Role              string             `json:"role"`
+	Content           string             `json:"content"`
+	ReplyTo           []byte             `json:"reply_to"`
+	IsDeleted         bool               `json:"is_deleted"`
+	IsEdited          bool               `json:"is_edited"`
+	ThreadCount       int32              `json:"thread_count"`
+	ThreadLastReplyAt pgtype.Timestamptz `json:"thread_last_reply_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	UserEmail         pgtype.Text        `json:"user_email"`
+	DisplayName       pgtype.Text        `json:"display_name"`
+	AvatarUrl         pgtype.Text        `json:"avatar_url"`
+	Reactions         []byte             `json:"reactions"`
 }
 
 // ============================================================
@@ -577,14 +608,16 @@ func (q *Queries) ListMessagesByChat(ctx context.Context, arg ListMessagesByChat
 			&i.Role,
 			&i.Content,
 			&i.ReplyTo,
-			&i.Reactions,
 			&i.IsDeleted,
 			&i.IsEdited,
+			&i.ThreadCount,
+			&i.ThreadLastReplyAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UserEmail,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.Reactions,
 		); err != nil {
 			return nil, err
 		}
@@ -595,6 +628,69 @@ func (q *Queries) ListMessagesByChat(ctx context.Context, arg ListMessagesByChat
 	}
 	return items, nil
 }
+
+const listThreadMessages = `-- name: ListThreadMessages :many
+SELECT 
+  tm.id,
+  tm.parent_message_id,
+  tm.chat_id,
+  tm.group_id,
+  tm.user_id,
+  tm.user_email,
+  COALESCE(tm.user_name, u.display_name, '')::text as user_name,
+  COALESCE(tm.user_avatar, u.avatar_url, '')::text as user_avatar,
+  tm.content,
+  tm.created_at
+FROM thread_messages tm
+LEFT JOIN users u ON tm.user_id = u.id
+WHERE tm.parent_message_id = $1
+ORDER BY tm.created_at ASC
+`
+
+type ListThreadMessagesRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	ParentMessageID pgtype.UUID        `json:"parent_message_id"`
+	ChatID          pgtype.UUID        `json:"chat_id"`
+	GroupID         pgtype.UUID        `json:"group_id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	UserEmail       string             `json:"user_email"`
+	UserName        string             `json:"user_name"`
+	UserAvatar      string             `json:"user_avatar"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListThreadMessages(ctx context.Context, parentMessageID pgtype.UUID) ([]ListThreadMessagesRow, error) {
+	rows, err := q.db.Query(ctx, listThreadMessages, parentMessageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThreadMessagesRow
+	for rows.Next() {
+		var i ListThreadMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ParentMessageID,
+			&i.ChatID,
+			&i.GroupID,
+			&i.UserID,
+			&i.UserEmail,
+			&i.UserName,
+			&i.UserAvatar,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 
 const removeGroupMember = `-- name: RemoveGroupMember :exec
 DELETE FROM group_members WHERE group_id = $1 AND user_id = $2

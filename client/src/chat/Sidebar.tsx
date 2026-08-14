@@ -56,7 +56,7 @@ export default function Sidebar({
     <div className="flex h-full w-[280px] md:w-[260px] flex-col border-r border-nexus-border/30 bg-nexus-sidebar/80 backdrop-blur-xl relative z-40">
       {/* Header */}
       <div className="h-14 flex items-center px-4 border-b border-nexus-border/30 shrink-0">
-        <h1 className="text-sm font-bold tracking-tight text-nexus-text/90">Workspaces</h1>
+        <h2 className="text-sm font-bold tracking-tight text-nexus-text/90">Workspaces</h2>
       </div>
 
       {/* Groups */}
@@ -86,6 +86,8 @@ export default function Sidebar({
               >
                 {/* Expand/collapse chevron */}
                 <button
+                  type="button"
+                  aria-label={isActive ? `Collapse ${group.name}` : `Expand ${group.name}`}
                   onClick={(e) => {
                     e.stopPropagation()
                     if (isActive) onSelectGroup("") // collapse
@@ -117,6 +119,8 @@ export default function Sidebar({
                 {/* Delete button */}
                 {isOwner && !isPersonal && (
                   <button
+                    type="button"
+                    aria-label={`Delete workspace ${group.name}`}
                     onClick={(e) => {
                       e.stopPropagation()
                       onDeleteGroup(group.id)
@@ -151,6 +155,8 @@ export default function Sidebar({
                       <span className="truncate flex-1">{chat.title}</span>
                       {(isOwner || isPersonal) && (
                         <button
+                          type="button"
+                          aria-label={`Delete chat channel ${chat.title}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             onDeleteChat(group.id, chat.id)
@@ -174,6 +180,8 @@ export default function Sidebar({
         {/* New button */}
         <div className="relative mt-3 px-1">
           <button
+            type="button"
+            aria-label="Create or join workspace/chat"
             onClick={() => setShowCreateMenu((p) => !p)}
             className="
               flex w-full items-center justify-center gap-2
@@ -199,10 +207,11 @@ export default function Sidebar({
               ].map((item) => (
                 <button
                   key={item.type}
+                  type="button"
                   onClick={() => openModal(item.type)}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-nexus-text/80 hover:bg-nexus-primary/10 hover:text-nexus-primary transition-colors"
                 >
-                  <span>{item.icon}</span> {item.label}
+                  <span aria-hidden="true">{item.icon}</span> {item.label}
                 </button>
               ))}
             </div>
@@ -219,12 +228,14 @@ export default function Sidebar({
               <p className="text-[9px] uppercase tracking-wider text-nexus-muted/60 font-semibold mb-1">
                 Invite Code (click to copy)
               </p>
-              <p
-                className="text-sm font-mono font-bold text-nexus-primary/80 hover:text-nexus-primary transition-colors cursor-pointer select-all tracking-widest"
+              <button
+                type="button"
+                aria-label={`Copy invite code ${inviteCode}`}
+                className="text-sm font-mono font-bold text-nexus-primary/80 hover:text-nexus-primary transition-colors cursor-pointer select-all tracking-widest text-left"
                 onClick={() => navigator.clipboard.writeText(inviteCode)}
               >
                 {inviteCode}
-              </p>
+              </button>
             </div>
           )
         })()}
@@ -234,6 +245,8 @@ export default function Sidebar({
       <div className="shrink-0 p-2.5 border-t border-nexus-border/30">
         <div className="flex items-center gap-2">
           <button
+            type="button"
+            aria-label="Open settings"
             onClick={() => navigate("/settings")}
             className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-xs text-nexus-muted hover:bg-nexus-hover hover:text-nexus-text transition-all"
           >
@@ -241,6 +254,8 @@ export default function Sidebar({
             Settings
           </button>
           <button
+            type="button"
+            aria-label="Sign out of account"
             onClick={() => { logout(); navigate("/login") }}
             className="flex items-center justify-center p-2 rounded-lg text-nexus-muted hover:bg-red-500/10 hover:text-red-400 transition-all"
             title="Log out"
@@ -267,6 +282,10 @@ export default function Sidebar({
           <input
             autoFocus
             type="text"
+            aria-label={
+              modalType === "group" ? "Group Name" :
+              modalType === "chat" ? "Chat Title" : "Invite Code"
+            }
             className="w-full rounded-xl bg-nexus-bg border border-nexus-border px-4 py-3 text-nexus-text text-sm focus:border-nexus-primary/50 focus:outline-none focus:ring-[3px] focus:ring-nexus-primary/10 transition-all"
             placeholder={
               modalType === "group" ? "Group Name..." :
@@ -278,12 +297,14 @@ export default function Sidebar({
           />
           <div className="flex justify-end gap-2">
             <button
+              type="button"
               onClick={() => setModalType(null)}
               className="px-4 py-2 rounded-xl text-sm text-nexus-muted hover:bg-nexus-bg transition-colors"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleModalSubmit}
               className="px-4 py-2 rounded-xl text-sm bg-nexus-primary text-white hover:brightness-110 transition-all font-medium"
             >

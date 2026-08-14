@@ -3,8 +3,9 @@ gRPC service implementation for nexus-rag.
 Implements RAGService: RetrieveContext and EmbedAndStore RPCs.
 """
 import logging
-
+import torch
 import grpc
+
 
 import sys
 import os

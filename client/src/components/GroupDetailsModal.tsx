@@ -26,6 +26,8 @@ export default function GroupDetailsModal({
             <h3 className="text-base font-bold">{group.name}</h3>
             {!isPersonal && !isOwner && (
               <button
+                type="button"
+                aria-label={`Exit group ${group.name}`}
                 onClick={() => { onLeave(group.id); onClose() }}
                 className="px-3 py-1.5 bg-red-500/10 text-red-400/80 hover:bg-red-500/20 rounded-lg text-xs transition-all border border-red-500/20 font-medium"
               >
@@ -37,17 +39,19 @@ export default function GroupDetailsModal({
             )}
           </div>
           {group.invite_code && (
-            <div
-              className="flex items-center gap-2 bg-nexus-bg/60 rounded-lg px-3 py-2 cursor-pointer hover:bg-nexus-bg/80 transition-colors border border-nexus-border/20"
+            <button
+              type="button"
+              aria-label={`Copy invite code ${group.invite_code}`}
+              className="w-full flex items-center gap-2 bg-nexus-bg/60 rounded-lg px-3 py-2 cursor-pointer hover:bg-nexus-bg/80 transition-colors border border-nexus-border/20 text-left"
               onClick={() => navigator.clipboard.writeText(group.invite_code!)}
               title="Click to copy invite code"
             >
               <span className="text-[9px] uppercase tracking-wider text-nexus-muted/60 font-semibold">Invite Code</span>
               <span className="text-sm font-mono font-bold text-nexus-primary tracking-widest">{group.invite_code}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-nexus-muted/40 ml-auto">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-nexus-muted/40 ml-auto" aria-hidden="true">
                 <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
               </svg>
-            </div>
+            </button>
           )}
         </div>
 
@@ -75,6 +79,8 @@ export default function GroupDetailsModal({
                 </div>
                 {isOwner && member !== currentUserEmail && (
                   <button
+                    type="button"
+                    aria-label={`Remove member ${member}`}
                     onClick={() => onRemoveMember(group.id, member)}
                     className="opacity-0 group-hover/member:opacity-100 text-red-400/60 hover:text-red-400 text-[10px] px-2 py-1 rounded-md hover:bg-red-500/10 transition-all"
                   >

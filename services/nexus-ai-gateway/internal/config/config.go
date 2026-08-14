@@ -32,13 +32,15 @@ type Config struct {
 	OpenAI    ProviderConfig
 	Anthropic ProviderConfig
 	DeepSeek  ProviderConfig
+	Groq      ProviderConfig
 }
 
 func LoadConfig() *Config {
 	return &Config{
 		GRPCPort:        getEnvInt("GRPC_PORT", 50052),
-		HTTPPort:        getEnvInt("HTTP_PORT", 8001),
+		HTTPPort:        getEnvInt("HTTP_PORT", 8081),
 		RedisURL:        getEnv("REDIS_URL", "redis://localhost:6379/0"),
+
 		CacheTTLSeconds: getEnvInt("CACHE_TTL_SECONDS", 3600),
 		CBMaxFailures:   uint32(getEnvInt("CB_MAX_FAILURES", 5)),
 		CBTimeoutSec:    getEnvInt("CB_TIMEOUT_SEC", 30),
@@ -67,8 +69,15 @@ func LoadConfig() *Config {
 			BaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
 			Models:  getEnvSlice("DEEPSEEK_MODELS", "deepseek-chat,deepseek-coder"),
 		},
+		Groq: ProviderConfig{
+			Name:    "groq",
+			APIKey:  getEnv("GROQ_API_KEY", ""),
+			BaseURL: getEnv("GROQ_BASE_URL", "https://api.groq.com/openai"),
+			Models:  getEnvSlice("GROQ_MODELS", getEnv("GROQ_MODEL", "llama-3.3-70b-versatile,llama-3.1-8b-instant,mixtral-8x7b-32768")),
+		},
 	}
 }
+
 
 func getEnv(key, fallback string) string {
 	if v, ok := os.LookupEnv(key); ok {

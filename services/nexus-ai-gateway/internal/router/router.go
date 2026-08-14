@@ -30,54 +30,63 @@ type ModelRouter struct {
 // NewModelRouter constructs the router with providers, circuit breakers, and routing rules.
 func NewModelRouter(cfg *config.Config, responseCache *cache.ResponseCache) *ModelRouter {
 	// Initialize providers
+	groq := providers.NewOpenAICompatProvider(cfg.Groq)
 	gemini := providers.NewGeminiProvider(cfg.Gemini)
 	openai := providers.NewOpenAICompatProvider(cfg.OpenAI)
 	anthropic := providers.NewAnthropicProvider(cfg.Anthropic)
 	deepseek := providers.NewOpenAICompatProvider(cfg.DeepSeek)
 
 	// Create circuit breakers
+	cbGroq := circuit.NewBreaker("groq", cfg.CBMaxFailures, cfg.CBTimeoutSec)
 	cbGemini := circuit.NewBreaker("gemini", cfg.CBMaxFailures, cfg.CBTimeoutSec)
 	cbOpenAI := circuit.NewBreaker("openai", cfg.CBMaxFailures, cfg.CBTimeoutSec)
 	cbAnthropic := circuit.NewBreaker("anthropic", cfg.CBMaxFailures, cfg.CBTimeoutSec)
 	cbDeepSeek := circuit.NewBreaker("deepseek", cfg.CBMaxFailures, cfg.CBTimeoutSec)
 
-	// Build fallback chains per model_hint (from ARCHITECTURE.md routing strategy)
+	// Build fallback chains per model_hint (Groq prioritized)
 	chains := map[string][]FallbackChain{
 		// Default / "fast" — cheap and quick
 		"": {
+			{Model: "llama-3.3-70b-versatile", Provider: groq, Breaker: cbGroq},
 			{Model: "gemini-2.0-flash", Provider: gemini, Breaker: cbGemini},
 			{Model: "deepseek-chat", Provider: deepseek, Breaker: cbDeepSeek},
 			{Model: "gpt-4o-mini", Provider: openai, Breaker: cbOpenAI},
 		},
 		"fast": {
+			{Model: "llama-3.3-70b-versatile", Provider: groq, Breaker: cbGroq},
 			{Model: "gemini-2.0-flash", Provider: gemini, Breaker: cbGemini},
 			{Model: "deepseek-chat", Provider: deepseek, Breaker: cbDeepSeek},
 			{Model: "gpt-4o-mini", Provider: openai, Breaker: cbOpenAI},
 		},
 		// "quality" — high reasoning
 		"quality": {
+			{Model: "llama-3.3-70b-versatile", Provider: groq, Breaker: cbGroq},
 			{Model: "gemini-1.5-pro", Provider: gemini, Breaker: cbGemini},
 			{Model: "claude-sonnet-4-20250514", Provider: anthropic, Breaker: cbAnthropic},
 			{Model: "gpt-4o", Provider: openai, Breaker: cbOpenAI},
 		},
 		// "code" — specialized for code generation
 		"code": {
+			{Model: "llama-3.3-70b-versatile", Provider: groq, Breaker: cbGroq},
 			{Model: "deepseek-coder", Provider: deepseek, Breaker: cbDeepSeek},
 			{Model: "gpt-4o", Provider: openai, Breaker: cbOpenAI},
 			{Model: "gemini-1.5-pro", Provider: gemini, Breaker: cbGemini},
 		},
 		// "summarize" — speed + cost optimized
 		"summarize": {
+			{Model: "llama-3.3-70b-versatile", Provider: groq, Breaker: cbGroq},
 			{Model: "gemini-2.0-flash", Provider: gemini, Breaker: cbGemini},
 			{Model: "claude-3-5-haiku-20241022", Provider: anthropic, Breaker: cbAnthropic},
 		},
 		// "enterprise" — safety-focused
 		"enterprise": {
+			{Model: "llama-3.3-70b-versatile", Provider: groq, Breaker: cbGroq},
 			{Model: "claude-sonnet-4-20250514", Provider: anthropic, Breaker: cbAnthropic},
 			{Model: "gpt-4o", Provider: openai, Breaker: cbOpenAI},
 			{Model: "gemini-1.5-pro", Provider: gemini, Breaker: cbGemini},
 		},
 	}
+
 
 	// Filter out unavailable providers
 	for hint, chain := range chains {

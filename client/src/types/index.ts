@@ -15,6 +15,10 @@ export type Message = {
   is_deleted?: boolean
   is_edited?: boolean
   created_at?: string
+  reactions?: Record<string, string[]>
+  thread_count?: number
+  thread_last_reply_at?: string
+  thread_messages?: Message[]
 }
 
 export type Chat = {
@@ -27,6 +31,7 @@ export type Group = {
   id: string
   name: string
   owner_id?: string
+  user_id?: string
   invite_code?: string
   visibility?: string
   join_policy?: string

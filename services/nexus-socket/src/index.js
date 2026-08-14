@@ -62,10 +62,11 @@ async function main() {
   // ---- Socket.IO Server ----
   const io = new Server(httpServer, {
     cors: {
-      origin: config.CORS_ORIGIN,
+      origin: (origin, callback) => callback(null, true),
       methods: ['GET', 'POST'],
       credentials: true,
     },
+
     // Increase max buffer size for large messages
     maxHttpBufferSize: 1e6, // 1 MB
     // Ping/pong for connection keepalive
@@ -97,11 +98,44 @@ async function main() {
 
   try {
     const client = await pgPool.connect();
-    client.release();
     console.log('[postgres] Connected successfully');
+    
+    // Ensure reaction and thread tables exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS message_reactions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL,
+        user_email VARCHAR(255) NOT NULL,
+        emoji VARCHAR(32) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_user_message_emoji UNIQUE (message_id, user_email, emoji)
+      );
+      CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON message_reactions(message_id);
+
+      CREATE TABLE IF NOT EXISTS thread_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        parent_message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        chat_id UUID NOT NULL,
+        group_id UUID NOT NULL,
+        user_id UUID NOT NULL,
+        user_email VARCHAR(255) NOT NULL,
+        user_name VARCHAR(255),
+        user_avatar VARCHAR(512),
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_thread_parent_id ON thread_messages(parent_message_id);
+
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_count INTEGER DEFAULT 0;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_last_reply_at TIMESTAMPTZ;
+    `);
+    console.log('[postgres] Schema verified (reactions & threads ready)');
+    client.release();
   } catch (err) {
-    console.warn('[startup] Postgres connection failed — message persistence disabled:', err.message);
+    console.warn('[startup] Postgres connection/init warning:', err.message);
   }
+
 
   // ---- Pub/Sub (AI inference trigger) ----
   await initPubSub();

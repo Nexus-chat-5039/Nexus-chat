@@ -104,7 +104,35 @@ func (h *AuthHandler) Register(c *gin.Context) {
 				UserID:      user.ID,
 				Role:        "owner",
 			})
+
+			code, _ := generateInviteCode()
+			var inviteCodePg pgtype.Text
+			inviteCodePg.Scan(code)
+			grp, err := h.db.CreateGroup(c.Request.Context(), database.CreateGroupParams{
+				TenantID:    tenant.ID,
+				WorkspaceID: ws.ID,
+				Name:        "General",
+				OwnerID:     user.ID,
+				AiEnabled:   true,
+				InviteCode:  inviteCodePg,
+				Visibility:  "private",
+				JoinPolicy:  "invite_only",
+			})
+			if err == nil {
+				h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+					GroupID: grp.ID,
+					UserID:  user.ID,
+					Role:    "owner",
+				})
+				h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
+					TenantID:    tenant.ID,
+					WorkspaceID: ws.ID,
+					GroupID:     grp.ID,
+					Title:       "general",
+				})
+			}
 		}
+
 	}
 
 	// Generate JWT
@@ -462,6 +490,43 @@ func (h *GroupHandler) List(c *gin.Context) {
 		return
 	}
 
+	// Auto-provision a default group and chat if user has none in their workspace
+	if len(groups) == 0 {
+		workspaces, err := h.db.ListWorkspacesByUser(c.Request.Context(), uid)
+		if err == nil && len(workspaces) > 0 {
+			ws := workspaces[0]
+			code, _ := generateInviteCode()
+			var inviteCodePg pgtype.Text
+			inviteCodePg.Scan(code)
+
+			newGrp, err := h.db.CreateGroup(c.Request.Context(), database.CreateGroupParams{
+				TenantID:    ws.TenantID,
+				WorkspaceID: ws.ID,
+				Name:        "General",
+				OwnerID:     uid,
+				AiEnabled:   true,
+				InviteCode:  inviteCodePg,
+				Visibility:  "private",
+				JoinPolicy:  "invite_only",
+			})
+			if err == nil {
+				h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+					GroupID: newGrp.ID,
+					UserID:  uid,
+					Role:    "owner",
+				})
+				h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
+					TenantID:    ws.TenantID,
+					WorkspaceID: ws.ID,
+					GroupID:     newGrp.ID,
+					Title:       "general",
+				})
+				groups = []database.Group{newGrp}
+			}
+		}
+	}
+
+
 	var result []gin.H
 	for _, g := range groups {
 		chats, err := h.db.ListChatsByGroup(c.Request.Context(), g.ID)
@@ -662,7 +727,10 @@ func (h *ChatHandler) List(c *gin.Context) {
 // GET /api/chats/:id/messages
 func (h *ChatHandler) ListMessages(c *gin.Context) {
 	var chatID pgtype.UUID
-	chatID.Scan(c.Param("id"))
+	if err := chatID.Scan(c.Param("id")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid chat id"})
+		return
+	}
 
 	limitStr := c.DefaultQuery("limit", "50")
 	offsetStr := c.DefaultQuery("offset", "0")
@@ -680,13 +748,114 @@ func (h *ChatHandler) ListMessages(c *gin.Context) {
 		Offset: int32(offset),
 	})
 	if err != nil {
-		log.Printf("[ERROR] failed to list messages for chat %s: %v", chatID.String(), err)
+		log.Printf("[ERROR] failed to list messages for chat %s: %v", c.Param("id"), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list messages"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"messages": messages})
+	var formattedMessages []gin.H
+	for _, m := range messages {
+		var reactionsMap map[string][]string
+		if len(m.Reactions) > 0 {
+			_ = json.Unmarshal(m.Reactions, &reactionsMap)
+		}
+		if reactionsMap == nil {
+			reactionsMap = make(map[string][]string)
+		}
+
+		var replyToObj interface{}
+		if len(m.ReplyTo) > 0 {
+			_ = json.Unmarshal(m.ReplyTo, &replyToObj)
+		}
+
+		userEmail := ""
+		if m.UserEmail.Valid {
+			userEmail = m.UserEmail.String
+		}
+		displayName := ""
+		if m.DisplayName.Valid {
+			displayName = m.DisplayName.String
+		}
+		avatarUrl := ""
+		if m.AvatarUrl.Valid {
+			avatarUrl = m.AvatarUrl.String
+		}
+
+		var threadLastReplyAt *time.Time
+		if m.ThreadLastReplyAt.Valid {
+			threadLastReplyAt = &m.ThreadLastReplyAt.Time
+		}
+
+		formattedMessages = append(formattedMessages, gin.H{
+			"id":                   formatUUID(m.ID),
+			"tenant_id":            formatUUID(m.TenantID),
+			"workspace_id":         formatUUID(m.WorkspaceID),
+			"group_id":             formatUUID(m.GroupID),
+			"chat_id":              formatUUID(m.ChatID),
+			"user_id":              formatUUID(m.UserID),
+			"user_email":           userEmail,
+			"display_name":         displayName,
+			"avatar_url":           avatarUrl,
+			"role":                 m.Role,
+			"content":              m.Content,
+			"reply_to":             replyToObj,
+			"reactions":            reactionsMap,
+			"thread_count":         m.ThreadCount,
+			"thread_last_reply_at": threadLastReplyAt,
+			"is_deleted":           m.IsDeleted,
+			"is_edited":            m.IsEdited,
+			"created_at":           m.CreatedAt.Time,
+			"updated_at":           m.UpdatedAt.Time,
+		})
+	}
+
+	if formattedMessages == nil {
+		formattedMessages = []gin.H{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"messages": formattedMessages})
 }
+
+// GET /api/messages/:id/thread
+func (h *ChatHandler) GetMessageThread(c *gin.Context) {
+	var messageID pgtype.UUID
+	if err := messageID.Scan(c.Param("id")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid message id"})
+		return
+	}
+
+	replies, err := h.db.ListThreadMessages(c.Request.Context(), messageID)
+	if err != nil {
+		log.Printf("[ERROR] failed to list thread messages for %s: %v", c.Param("id"), err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list thread messages"})
+		return
+	}
+
+	var formattedReplies []gin.H
+	for _, r := range replies {
+		var avatar *string
+		if r.UserAvatar != "" {
+			avatar = &r.UserAvatar
+		}
+		formattedReplies = append(formattedReplies, gin.H{
+			"id":          formatUUID(r.ID),
+			"content":     r.Content,
+			"user_email":  r.UserEmail,
+			"user_name":   r.UserName,
+			"user_avatar": avatar,
+			"created_at":  r.CreatedAt.Time,
+		})
+	}
+	if formattedReplies == nil {
+		formattedReplies = []gin.H{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"parent_message_id": formatUUID(messageID),
+		"replies":           formattedReplies,
+	})
+}
+
 
 // ────────────────────────────────────────────────────────────────
 // Helpers

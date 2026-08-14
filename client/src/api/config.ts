@@ -2,7 +2,8 @@ const REST_API_URL_ENV = import.meta.env.VITE_REST_API_URL
 const SOCKET_URL_ENV = import.meta.env.VITE_SOCKET_URL
 
 const DEFAULT_REST_URL = "http://localhost:8080"
-const DEFAULT_SOCKET_URL = "http://localhost:3001"
+const DEFAULT_SOCKET_URL = "http://localhost:3000"
+
 
 if (!REST_API_URL_ENV) {
     console.info(`VITE_REST_API_URL not set. Using default backend: ${DEFAULT_REST_URL}`)

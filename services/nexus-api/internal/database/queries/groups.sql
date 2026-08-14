@@ -71,12 +71,60 @@ DELETE FROM chats WHERE id = $1;
 -- ============================================================
 
 -- name: ListMessagesByChat :many
-SELECT m.*, u.email as user_email, u.display_name, u.avatar_url 
+SELECT 
+  m.id, 
+  m.tenant_id, 
+  m.workspace_id, 
+  m.group_id, 
+  m.chat_id, 
+  m.user_id, 
+  m.role, 
+  m.content, 
+  m.reply_to, 
+  m.is_deleted, 
+  m.is_edited, 
+  COALESCE(m.thread_count, 0)::int AS thread_count,
+  m.thread_last_reply_at,
+  m.created_at, 
+  m.updated_at, 
+  u.email as user_email, 
+  u.display_name, 
+  u.avatar_url,
+  COALESCE(
+    (
+      SELECT jsonb_object_agg(r.emoji, r.user_emails)
+      FROM (
+        SELECT emoji, jsonb_agg(user_email) as user_emails
+        FROM message_reactions
+        WHERE message_id = m.id
+        GROUP BY emoji
+      ) r
+    ),
+    '{}'::jsonb
+  ) AS reactions
 FROM messages m
 LEFT JOIN users u ON m.user_id = u.id
 WHERE m.chat_id = $1 AND m.is_deleted = false
 ORDER BY m.created_at ASC
 LIMIT $2 OFFSET $3;
+
+-- name: ListThreadMessages :many
+SELECT 
+  tm.id,
+  tm.parent_message_id,
+  tm.chat_id,
+  tm.group_id,
+  tm.user_id,
+  tm.user_email,
+  COALESCE(tm.user_name, u.display_name, '')::text as user_name,
+  COALESCE(tm.user_avatar, u.avatar_url, '')::text as user_avatar,
+  tm.content,
+  tm.created_at
+FROM thread_messages tm
+LEFT JOIN users u ON tm.user_id = u.id
+WHERE tm.parent_message_id = $1
+ORDER BY tm.created_at ASC;
+
 
 -- ============================================================
 -- Group Invites

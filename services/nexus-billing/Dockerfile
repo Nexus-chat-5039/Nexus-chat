@@ -1,5 +1,8 @@
 # Build Stage
-FROM golang:1.26-alpine AS builder
+FROM golang:alpine AS builder
+
+
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 
@@ -16,7 +19,8 @@ COPY services/nexus-billing/ services/nexus-billing/
 
 # Build static binary
 WORKDIR /app/services/nexus-billing
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/billing ./cmd/billing
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/billing ./cmd/billing
+
 
 # Final Stage
 FROM gcr.io/distroless/static:nonroot

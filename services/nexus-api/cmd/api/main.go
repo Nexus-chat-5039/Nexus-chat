@@ -50,9 +50,16 @@ func main() {
 
 	// CORS
 	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", cfg.CORSOrigin)
+		origin := c.GetHeader("Origin")
+		if origin != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+		} else if cfg.CORSOrigin != "" {
+			c.Header("Access-Control-Allow-Origin", cfg.CORSOrigin)
+		} else {
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept, X-Requested-With")
 		c.Header("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
@@ -61,6 +68,7 @@ func main() {
 		}
 		c.Next()
 	})
+
 
 	// Health
 	router.GET("/health", func(c *gin.Context) {
@@ -105,11 +113,13 @@ func main() {
 	protected.POST("/groups/join", groupHandler.Join)
 	protected.DELETE("/groups/:id", groupHandler.Delete)
 
-	// Chats
+	// Chats & Messages
 	chatHandler := handlers.NewChatHandler(queries)
 	protected.POST("/chats", chatHandler.Create)
 	protected.GET("/chats", chatHandler.List)
 	protected.GET("/chats/:id/messages", chatHandler.ListMessages)
+	protected.GET("/messages/:id/thread", chatHandler.GetMessageThread)
+
 
 	// ---- HTTP Server ----
 	srv := &http.Server{

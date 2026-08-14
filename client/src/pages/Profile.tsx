@@ -14,8 +14,8 @@ export default function Profile() {
   const { userEmail, username: currentUsername } = useWorkspace()
   const navigate = useNavigate()
 
-  const [username, setUsername] = useState("")
-  const [email, setEmail] = useState("")
+  const [username, setUsername] = useState(currentUsername || "")
+  const [email, setEmail] = useState(userEmail || "")
   const [fullName, setFullName] = useState("")
   const [bio, setBio] = useState("")
   const [profileImage, setProfileImage] = useState<string | null>(null)
@@ -29,24 +29,24 @@ export default function Profile() {
   }, [])
 
   useEffect(() => {
-    if (currentUsername) setUsername(currentUsername)
-    if (userEmail) setEmail(userEmail)
-
+    let isMounted = true
     const fetchMe = async () => {
       if (!token) return
       try {
         const data = await getProfile()
-        setFullName(data.full_name || "")
-        setBio(data.bio || "")
-        setUsername(data.username || "")
-        setEmail(data.email || "")
+        if (!isMounted) return
+        if (data.full_name) setFullName(data.full_name)
+        if (data.bio) setBio(data.bio)
+        if (data.username) setUsername(data.username)
+        if (data.email) setEmail(data.email)
         if (data.profile_image) setProfileImage(data.profile_image)
       } catch (e) {
         console.error("Failed to fetch profile", e)
       }
     }
     fetchMe()
-  }, [currentUsername, userEmail, token])
+    return () => { isMounted = false }
+  }, [token])
 
   // Auto-clear success
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function Profile() {
     try {
       const data = await uploadAvatar(file)
       setProfileImage(`${data.profile_image}?t=${Date.now()}`)
-    } catch (err) {
+    } catch {
       setError("Failed to upload image")
     } finally {
       setImageLoading(false)

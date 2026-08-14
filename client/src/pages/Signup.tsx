@@ -30,6 +30,7 @@ export default function Signup() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [agreed, setAgreed] = useState(false)
@@ -88,9 +89,15 @@ export default function Signup() {
       const { user, token: access_token } = await authService.register(email, password, email.split("@")[0])
       useAuthStore.getState().login(access_token, user.email, user.display_name)
       navigate("/onboarding", { replace: true })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      setError(err.response?.data?.error || err.message || "Signup failed")
+      const message =
+        typeof err === "object" && err !== null && "response" in err
+          ? ((err as { response?: { data?: { error?: string } } }).response?.data?.error)
+          : err instanceof Error
+          ? err.message
+          : "Signup failed"
+      setError(message || "Signup failed")
       setLoading(false)
     }
   }
@@ -130,27 +137,28 @@ export default function Signup() {
 
           {/* Password */}
           <div className="signup-field mb-3">
-            <div className="relative">
-              <NexusInput
-                label="Password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                icon={<Lock className="w-4 h-4" />}
-              />
-              <button
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-[30px] text-nexus-muted hover:text-nexus-text transition-colors"
-                type="button"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <NexusInput
+              label="Password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              icon={<Lock className="w-4 h-4" />}
+              rightElement={
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5 flex items-center justify-center"
+                  type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              }
+            />
             {/* Password strength */}
             {password.length > 0 && (
-              <div className="mt-2 space-y-1">
-                <div className="flex gap-1">
+              <div className="mt-2 space-y-1" role="status" aria-label={`Password strength: ${strengthLabels[strength - 1] || "Too short"}`}>
+                <div className="flex gap-1" aria-hidden="true">
                   {[1, 2, 3, 4].map((i) => (
                     <div
                       key={i}
@@ -173,17 +181,31 @@ export default function Signup() {
           <div className="signup-field mb-4">
             <NexusInput
               label="Confirm Password"
-              type="password"
+              type={showConfirmPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
               icon={<Lock className="w-4 h-4" />}
+              rightElement={
+                <button
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5 flex items-center justify-center"
+                  type="button"
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              }
             />
           </div>
 
           {/* Terms */}
           <div className="signup-field flex items-start gap-2.5 mb-5">
             <button
+              type="button"
+              role="checkbox"
+              aria-checked={agreed}
+              aria-label="I agree to Terms of Service and Privacy Policy"
               onClick={() => setAgreed(!agreed)}
               className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all ${
                 agreed

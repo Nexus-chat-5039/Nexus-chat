@@ -1,0 +1,18 @@
+{
+  "name": "Nexus Chat",
+  "short_name": "Nexus",
+  "description": "Real-time intelligent team chat with contextual AI memory and workspace collaboration.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#e03c31",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/nexus.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

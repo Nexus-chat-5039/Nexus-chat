@@ -56,9 +56,10 @@ export default function Modal({ isOpen, onClose, title, children }: Props) {
         className="w-full max-w-sm rounded-2xl border border-nexus-border/50 bg-nexus-card/95 backdrop-blur-xl p-6 shadow-2xl relative mx-4 animate-[scaleIn_0.2s_ease-out]"
       >
         <button
+          type="button"
           onClick={onClose}
           className="absolute right-4 top-4 p-1.5 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-lg transition-all"
-          aria-label="Close"
+          aria-label="Close dialog"
         >
           <X size={16} />
         </button>

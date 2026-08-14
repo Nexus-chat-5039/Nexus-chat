@@ -16,7 +16,7 @@ const Settings = lazy(() => import("./pages/Settings"))
 
 function LoadingFallback() {
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-nexus-bg">
+    <div className="flex h-screen w-full items-center justify-center bg-nexus-bg" role="status" aria-live="polite">
       <div className="flex flex-col items-center gap-3">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-nexus-primary border-t-transparent" />
         <p className="text-nexus-muted text-sm animate-pulse">Loading...</p>
@@ -52,6 +52,13 @@ export default function App() {
 
   return (
     <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-nexus-primary focus:text-white focus:rounded-xl focus:shadow-xl focus:outline-none focus:ring-2 focus:ring-white"
+      >
+        Skip to content
+      </a>
+
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route
@@ -116,7 +123,11 @@ export default function App() {
       </Suspense>
 
       {/* Toast container */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2">
+      <div
+        role="region"
+        aria-label="Notifications"
+        className="fixed top-4 right-4 z-[100] flex flex-col gap-2"
+      >
         {toasts.map((toast) => (
           <NexusToast key={toast.id} toast={toast} onDismiss={dismissToast} />
         ))}

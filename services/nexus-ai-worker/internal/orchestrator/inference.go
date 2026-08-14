@@ -83,10 +83,80 @@ func (o *Orchestrator) Close() {
 	}
 }
 
+type EmbedJob struct {
+	Content     string `json:"content"`
+	TenantID    string `json:"tenant_id"`
+	WorkspaceID string `json:"workspace_id"`
+	GroupID     string `json:"group_id"`
+	ChatID      string `json:"chat_id"`
+	UserID      string `json:"user_id"`
+	Role        string `json:"role"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+func (o *Orchestrator) ProcessEmbed(ctx context.Context, job EmbedJob) error {
+	_, err := o.ragClient.EmbedAndStore(ctx, &pb_rag.EmbedRequest{
+		Content:     job.Content,
+		TenantId:    job.TenantID,
+		WorkspaceId: job.WorkspaceID,
+		GroupId:     job.GroupID,
+		ChatId:      job.ChatID,
+		UserId:      job.UserID,
+		Role:        job.Role,
+		CreatedAt:   job.CreatedAt,
+	})
+	return err
+}
+
 func (o *Orchestrator) ProcessInference(ctx context.Context, job InferenceJob) error {
 	log.Printf("Starting inference for chat %s", job.ChatID)
 
-	// 1. Retrieve Context from RAG
+	// 1. Retrieve Recent Chat History from Database (PostgreSQL)
+	var historyStr string
+	rows, err := o.db.Pool.Query(ctx, `
+		SELECT m.role, m.content, COALESCE(u.display_name, u.email, 'User') as sender_name
+		FROM messages m
+		LEFT JOIN users u ON m.user_id = u.id
+		WHERE m.chat_id = $1 AND m.is_deleted = false
+		ORDER BY m.created_at DESC
+		LIMIT 25
+	`, job.ChatID)
+	if err != nil {
+		log.Printf("[orchestrator] Warning: failed to fetch chat history: %v", err)
+	} else {
+		type histMsg struct {
+			role    string
+			content string
+			sender  string
+		}
+		var history []histMsg
+		for rows.Next() {
+			var h histMsg
+			if scanErr := rows.Scan(&h.role, &h.content, &h.sender); scanErr == nil {
+				history = append(history, h)
+			}
+		}
+		rows.Close()
+
+		// Reverse to chronological order (oldest to newest)
+		for i, j := 0, len(history)-1; i < j; i, j = i+1, j-1 {
+			history[i], history[j] = history[j], history[i]
+		}
+
+		if len(history) > 0 {
+			historyStr = "### Recent Conversation History:\n"
+			for _, h := range history {
+				if h.role == "assistant" {
+					historyStr += fmt.Sprintf("- [Nexus AI]: %s\n", h.content)
+				} else {
+					historyStr += fmt.Sprintf("- [%s]: %s\n", h.sender, h.content)
+				}
+			}
+		}
+	}
+
+	// 2. Retrieve Semantic Context from RAG (Qdrant)
+	var ragContextStr string
 	ragReq := &pb_rag.RetrieveRequest{
 		Query:       job.Query,
 		TenantId:    job.TenantID,
@@ -98,21 +168,30 @@ func (o *Orchestrator) ProcessInference(ctx context.Context, job InferenceJob) e
 
 	ragRes, err := o.ragClient.RetrieveContext(ctx, ragReq)
 	if err != nil {
-		return fmt.Errorf("rag retrieval failed: %w", err)
+		log.Printf("[orchestrator] Warning: RAG retrieval failed (%v). Continuing inference without semantic context.", err)
+	} else if ragRes != nil && len(ragRes.Chunks) > 0 {
+		ragContextStr = "### Relevant Semantic Knowledge Context:\n"
+		for i, chunk := range ragRes.Chunks {
+			ragContextStr += fmt.Sprintf("Context %d: %s\n", i+1, chunk.Content)
+		}
 	}
 
-	// Format context string
-	var contextStr string
-	for i, chunk := range ragRes.Chunks {
-		contextStr += fmt.Sprintf("Context %d: %s\n", i+1, chunk.Content)
+	// Combine conversation history and semantic knowledge
+	var combinedContext string
+	if historyStr != "" {
+		combinedContext += historyStr + "\n"
+	}
+	if ragContextStr != "" {
+		combinedContext += ragContextStr + "\n"
 	}
 
-	// 2. Request Streaming Generation from AI Gateway
+	// 3. Request Streaming Generation from AI Gateway
 	gwReq := &pb_gateway.GenerateRequest{
 		Prompt:   job.Query,
-		Context:  contextStr,
+		Context:  combinedContext,
 		TenantId: job.TenantID,
 	}
+
 
 	stream, err := o.gatewayClient.StreamResponse(ctx, gwReq)
 	if err != nil {
@@ -152,12 +231,14 @@ func (o *Orchestrator) ProcessInference(ctx context.Context, job InferenceJob) e
 
 	// 4. Save to Database
 	var pgMsgID, pgTenant, pgWorkspace, pgGroup, pgChat, pgUser pgtype.UUID
-	pgMsgID.Scan(messageID)
-	pgTenant.Scan(job.TenantID)
-	pgWorkspace.Scan(job.WorkspaceID)
-	pgGroup.Scan(job.GroupID)
-	pgChat.Scan(job.ChatID)
-	pgUser.Scan(job.UserID) // In a real app, this might be the system AI user ID
+	_ = pgMsgID.Scan(messageID)
+	_ = pgTenant.Scan(job.TenantID)
+	_ = pgWorkspace.Scan(job.WorkspaceID)
+	_ = pgGroup.Scan(job.GroupID)
+	_ = pgChat.Scan(job.ChatID)
+	if job.UserID != "" && job.UserID != "system" {
+		_ = pgUser.Scan(job.UserID)
+	}
 
 	_, dbErr := o.db.Queries.InsertMessage(ctx, postgres.InsertMessageParams{
 		ID:          pgMsgID,
@@ -169,6 +250,7 @@ func (o *Orchestrator) ProcessInference(ctx context.Context, job InferenceJob) e
 		Role:        "assistant",
 		Content:     fullResponse,
 	})
+
 
 	if dbErr != nil {
 		return fmt.Errorf("failed to save AI message to database: %w", dbErr)

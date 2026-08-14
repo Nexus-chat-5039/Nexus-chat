@@ -2,11 +2,19 @@ import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "../stores/authStore"
 import { updateProfile } from "../api/auth"
-import { ArrowRight, Camera, Check, User, Briefcase, Users } from "lucide-react"
+import { ArrowRight, Camera, Check, User, Briefcase } from "lucide-react"
 import AmbientBackground from "../components/AmbientBackground"
 import NexusButton from "../components/ui/NexusButton"
 import NexusInput from "../components/ui/NexusInput"
 import gsap from "gsap"
+
+const CONFETTI_PARTICLES = Array.from({ length: 20 }, (_, i) => ({
+  left: `${(i * 37) % 100}%`,
+  color: ["#A4161A", "#EDEDED", "#C41E22", "#9CA3AF"][i % 4],
+  duration: `${1.5 + ((i * 0.17) % 1.2)}s`,
+  delay: `${(i * 0.09) % 0.5}s`,
+  rotation: `rotate(${(i * 67) % 360}deg)`,
+}))
 
 const steps = [
   { id: "profile", label: "Profile", icon: User },
@@ -36,7 +44,6 @@ export default function Onboarding() {
   const [selectedUseCases, setSelectedUseCases] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [showConfetti, setShowConfetti] = useState(false)
 
   const contentRef = useRef<HTMLDivElement>(null)
   const confettiRef = useRef<HTMLDivElement>(null)
@@ -62,7 +69,6 @@ export default function Onboarding() {
 
   useEffect(() => {
     if (step === 2) {
-      setShowConfetti(true)
       const timer = setTimeout(() => navigate("/chat"), 2500)
       return () => clearTimeout(timer)
     }
@@ -288,24 +294,22 @@ export default function Onboarding() {
           {step === 2 && (
             <div className="text-center py-8">
               {/* Confetti */}
-              {showConfetti && (
-                <div ref={confettiRef} className="absolute inset-0 overflow-hidden pointer-events-none">
-                  {Array.from({ length: 20 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="absolute w-2 h-2 rounded-sm"
-                      style={{
-                        left: `${Math.random() * 100}%`,
-                        top: "-10px",
-                        backgroundColor: ["#A4161A", "#EDEDED", "#C41E22", "#9CA3AF"][i % 4],
-                        animation: `confettiDrop ${1.5 + Math.random()}s ease-out forwards`,
-                        animationDelay: `${Math.random() * 0.5}s`,
-                        transform: `rotate(${Math.random() * 360}deg)`,
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
+              <div ref={confettiRef} className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+                {CONFETTI_PARTICLES.map((particle, i) => (
+                  <div
+                    key={i}
+                    className="absolute w-2 h-2 rounded-sm"
+                    style={{
+                      left: particle.left,
+                      top: "-10px",
+                      backgroundColor: particle.color,
+                      animation: `confettiDrop ${particle.duration} ease-out forwards`,
+                      animationDelay: particle.delay,
+                      transform: particle.rotation,
+                    }}
+                  />
+                ))}
+              </div>
 
               {/* Success checkmark */}
               <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">

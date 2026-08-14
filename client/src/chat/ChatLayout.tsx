@@ -1,20 +1,29 @@
 import { useState, useCallback, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import Sidebar from "./Sidebar"
 import ChatHeader from "./ChatHeader"
 import MessageList from "./MessageList"
 import MessageInput from "./MessageInput"
+import ThreadPanel from "./ThreadPanel"
 import { useWorkspace } from "../context/WorkspaceContext"
+import { useAuthStore } from "../stores/authStore"
 import { ErrorBoundary } from "../components/ErrorBoundary"
 import GroupDetailsModal from "../components/GroupDetailsModal"
+import CommandPalette from "../components/CommandPalette"
 import type { Message } from "../types"
 
 export default function ChatLayout() {
+  const navigate = useNavigate()
+  const { logout } = useAuthStore()
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth > 768 : true
   )
   const [isInfoOpen, setIsInfoOpen] = useState(false)
   const [showGroupDetails, setShowGroupDetails] = useState(false)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+  const [activeThread, setActiveThread] = useState<Message | null>(null)
 
   useEffect(() => {
     const handleResize = () => {
@@ -25,6 +34,18 @@ export default function ChatLayout() {
     }
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
+  }, [])
+
+  // Global ⌘K / Ctrl+K shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        setIsCommandPaletteOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
 
   const handleMobileAction = useCallback(() => {
@@ -43,6 +64,7 @@ export default function ChatLayout() {
     setActiveChatId,
     isTyping,
     isLoading,
+    streamingMessageId,
     sendMessage,
     createGroup,
     createChat,
@@ -55,7 +77,12 @@ export default function ChatLayout() {
     profileImage,
     deleteMessage,
     editMessage,
+    reactToMessage,
+    sendThreadReply,
+    loadThreadMessages,
   } = useWorkspace()
+
+  const [isThreadLoading, setIsThreadLoading] = useState(false)
 
   const handleReply = useCallback((message: Message) => {
     setReplyingTo(message)
@@ -83,10 +110,89 @@ export default function ChatLayout() {
     [sendMessage, replyingTo]
   )
 
+  const handleReact = useCallback(
+    (messageId: string, emoji: string) => {
+      reactToMessage(messageId, emoji)
+    },
+    [reactToMessage]
+  )
+
+  const handleOpenThread = useCallback(
+    (message: Message) => {
+      setActiveThread(message)
+      setIsInfoOpen(false) // threads replace info panel
+      setIsThreadLoading(true)
+      loadThreadMessages(message.id).finally(() => {
+        setIsThreadLoading(false)
+      })
+    },
+    [loadThreadMessages]
+  )
+
+  const handleCloseThread = useCallback(() => {
+    setActiveThread(null)
+  }, [])
+
+  const handleThreadReply = useCallback(
+    (content: string) => {
+      if (activeThread) {
+        sendThreadReply(activeThread.id, content)
+      }
+    },
+    [activeThread, sendThreadReply]
+  )
+
+  // Keep activeThread in sync with message updates (reactions, thread_messages, etc.)
+  const activeThreadMessage = activeThread
+    ? activeChat.messages.find((m) => m.id === activeThread.id) || activeThread
+    : null
+
+
   const toggleSidebar = useCallback(() => setIsSidebarOpen((p) => !p), [])
-  const toggleInfo = useCallback(() => setIsInfoOpen((p) => !p), [])
+  const toggleInfo = useCallback(() => {
+    setIsInfoOpen((p) => !p)
+    if (!isInfoOpen) setActiveThread(null) // close thread when opening info
+  }, [isInfoOpen])
   const openDetails = useCallback(() => setShowGroupDetails(true), [])
   const closeDetails = useCallback(() => setShowGroupDetails(false), [])
+  const openCommandPalette = useCallback(() => setIsCommandPaletteOpen(true), [])
+  const closeCommandPalette = useCallback(() => setIsCommandPaletteOpen(false), [])
+
+  // Command palette actions
+  const handleCommandPaletteAction = useCallback(
+    (action: string) => {
+      if (action === "logout") {
+        logout()
+        navigate("/login")
+      }
+      // new-chat, new-group, join-group are handled via sidebar modals
+      // For now we just close the palette
+    },
+    [logout, navigate]
+  )
+
+  const handleCommandPaletteNavigate = useCallback(
+    (path: string) => {
+      navigate(path)
+    },
+    [navigate]
+  )
+
+  const handleCommandPaletteSelectGroup = useCallback(
+    (groupId: string) => {
+      setActiveGroupId(groupId)
+      handleMobileAction()
+    },
+    [setActiveGroupId, handleMobileAction]
+  )
+
+  const handleCommandPaletteSelectChat = useCallback(
+    (chatId: string) => {
+      setActiveChatId(chatId)
+      handleMobileAction()
+    },
+    [setActiveChatId, handleMobileAction]
+  )
 
   return (
     <ErrorBoundary>
@@ -134,17 +240,18 @@ export default function ChatLayout() {
         </div>
 
         {/* Main chat area */}
-        <div className="flex flex-1 flex-col min-w-0 relative z-10">
+        <main id="main-content" className="flex flex-1 flex-col min-w-0 relative z-10">
           <ChatHeader
             title={activeChat.title}
             groupName={activeGroup?.name || ""}
             onToggleSidebar={toggleSidebar}
             onToggleInfo={toggleInfo}
             onOpenDetails={openDetails}
+            onOpenCommandPalette={openCommandPalette}
           />
 
           {isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center" role="status" aria-live="polite">
               <div className="flex flex-col items-center gap-3">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-nexus-primary border-t-transparent" />
                 <p className="text-nexus-muted text-sm">Loading messages...</p>
@@ -154,11 +261,14 @@ export default function ChatLayout() {
             <MessageList
               messages={activeChat.messages}
               isTyping={isTyping}
+              streamingMessageId={streamingMessageId}
               userEmail={userEmail}
               userImage={profileImage}
               onReply={handleReply}
               onDelete={deleteMessage}
               onEdit={editMessage}
+              onReact={handleReact}
+              onOpenThread={handleOpenThread}
             />
           )}
 
@@ -168,18 +278,30 @@ export default function ChatLayout() {
             replyingTo={replyingTo}
             onCancelReply={cancelReply}
           />
-        </div>
+        </main>
 
-        {/* Info Panel (right sidebar) - desktop */}
-        <div
+        {/* Right panel: Thread or Info */}
+        <aside
+          aria-label={activeThreadMessage ? "Thread conversation" : "Conversation details"}
           className={`
             hidden md:block border-l border-nexus-border/30 bg-nexus-sidebar/60 backdrop-blur-xl
             transition-all duration-300 ease-out overflow-hidden
-            ${isInfoOpen ? "w-72 opacity-100" : "w-0 opacity-0"}
+            ${(isInfoOpen || activeThreadMessage) ? "w-80 opacity-100" : "w-0 opacity-0"}
           `}
         >
-          {isInfoOpen && activeGroup && (
-            <div className="w-72 h-full p-5">
+          {activeThreadMessage ? (
+            <ThreadPanel
+              parentMessage={activeThreadMessage}
+              threadMessages={activeThreadMessage.thread_messages || []}
+              currentUserEmail={userEmail}
+              currentUserImage={profileImage}
+              onSendReply={handleThreadReply}
+              onClose={handleCloseThread}
+              isLoading={isThreadLoading}
+            />
+
+          ) : isInfoOpen && activeGroup ? (
+            <div className="w-80 h-full p-5">
               <h3 className="font-semibold text-sm mb-4">{activeGroup.name}</h3>
               <p className="text-xs text-nexus-muted mb-4">
                 {(activeGroup.members || []).length} member{(activeGroup.members || []).length !== 1 ? "s" : ""}
@@ -196,11 +318,14 @@ export default function ChatLayout() {
                 ))}
               </div>
             </div>
-          )}
-        </div>
+          ) : null}
+        </aside>
 
         {/* Info Panel - mobile bottom sheet */}
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Conversation details"
           className={`
             md:hidden fixed bottom-0 left-0 right-0 z-40 bg-nexus-card/95 backdrop-blur-xl
             rounded-t-2xl border-t border-nexus-border/50 shadow-2xl
@@ -240,6 +365,18 @@ export default function ChatLayout() {
             onRemoveMember={removeMember}
           />
         )}
+
+        {/* Command Palette */}
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={closeCommandPalette}
+          groups={groups}
+          activeGroupId={activeGroupId}
+          onSelectGroup={handleCommandPaletteSelectGroup}
+          onSelectChat={handleCommandPaletteSelectChat}
+          onNavigate={handleCommandPaletteNavigate}
+          onAction={handleCommandPaletteAction}
+        />
       </div>
     </ErrorBoundary>
   )

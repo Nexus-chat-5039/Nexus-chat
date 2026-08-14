@@ -1,5 +1,8 @@
 # Build Stage
-FROM golang:1.26-alpine AS builder
+FROM golang:alpine AS builder
+
+
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 
@@ -17,7 +20,8 @@ COPY services/nexus-ai-worker/ services/nexus-ai-worker/
 
 # Build the binary
 WORKDIR /app/services/nexus-ai-worker
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/worker ./cmd/worker
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/worker ./cmd/worker
+
 
 # Final Stage
 FROM gcr.io/distroless/static:nonroot

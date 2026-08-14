@@ -1,14 +1,66 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr" class="dark">
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/nexus.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nexus Chat</title>
+  
+  <!-- Primary Meta Tags -->
+  <title>Nexus Chat — Real-Time Team Communication & AI Workspace</title>
+  <meta name="title" content="Nexus Chat — Real-Time Team Communication & AI Workspace" />
+  <meta name="description" content="Nexus is an ultra-fast, intelligent real-time team collaboration platform with contextual AI memory, instant messaging, shared channels, and seamless self-hosting." />
+  <meta name="keywords" content="Nexus chat, real-time chat, AI workspace, team collaboration, RAG memory, open source chat, self-hosted messaging" />
+  <meta name="author" content="Nexus" />
+  <meta name="robots" content="index, follow" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#e03c31" />
+  <link rel="canonical" href="https://nexus.chat" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://nexus.chat" />
+  <meta property="og:title" content="Nexus Chat — Real-Time Team Communication & AI Workspace" />
+  <meta property="og:description" content="Nexus is an ultra-fast, intelligent real-time team collaboration platform with contextual AI memory, instant messaging, and shared channels." />
+  <meta property="og:image" content="/nexus.svg" />
+  <meta property="og:site_name" content="Nexus Chat" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:url" content="https://nexus.chat" />
+  <meta name="twitter:title" content="Nexus Chat — Real-Time Team Communication & AI Workspace" />
+  <meta name="twitter:description" content="Nexus is an ultra-fast, intelligent real-time team collaboration platform with contextual AI memory, instant messaging, and shared channels." />
+  <meta name="twitter:image" content="/nexus.svg" />
+
+  <!-- Icons & PWA -->
+  <link rel="icon" type="image/svg+xml" href="/nexus.svg" />
+  <link rel="apple-touch-icon" href="/nexus.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <!-- Font Preconnect & Loading -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Nexus Chat",
+    "url": "https://nexus.chat",
+    "description": "Real-time intelligent team chat with contextual AI memory and workspace collaboration.",
+    "applicationCategory": "CommunicationApplication",
+    "operatingSystem": "All modern browsers",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
 </head>
 
-<body>
+<body class="bg-[#0d0d0d] text-[#e0e0e0] antialiased selection:bg-[#e03c31]/30 selection:text-white">
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

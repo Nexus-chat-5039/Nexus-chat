@@ -1,5 +1,4 @@
 import { cn } from "../../lib/utils"
-import { User } from "lucide-react"
 
 type NexusAvatarProps = {
   src?: string | null
@@ -37,13 +36,15 @@ export default function NexusAvatar({ src, name, size = "md", online, className 
         )}
       >
         {src ? (
-          <img src={src} alt={name || ""} className="w-full h-full object-cover" />
+          <img src={src} alt={name ? `${name}'s avatar` : "User avatar"} className="w-full h-full object-cover" />
         ) : (
           <span className="text-nexus-text/80 select-none">{initial}</span>
         )}
       </div>
       {online !== undefined && (
         <span
+          role="status"
+          aria-label={online ? "Online" : "Offline"}
           className={cn(
             "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-nexus-bg",
             onlineSizeMap[size],

@@ -26,6 +26,7 @@ type WorkspaceContextType = {
   isConnected: boolean
   isLoading: boolean
   error: string | null
+  streamingMessageId: string | null
   sendMessage: (text: string, triggerAi?: boolean, replyTo?: Message["replyTo"]) => void
   createGroup: (name: string) => Promise<void>
   createChat: (title: string) => Promise<void>
@@ -36,6 +37,9 @@ type WorkspaceContextType = {
   removeMember: (groupId: string, email: string) => Promise<void>
   deleteMessage: (messageId: string, type: "everyone" | "me") => void
   editMessage: (messageId: string, content: string) => void
+  reactToMessage: (messageId: string, emoji: string) => void
+  sendThreadReply: (parentMessageId: string, content: string) => void
+  loadThreadMessages: (parentMessageId: string) => Promise<Message[]>
   userEmail: string
   username: string
   profileImage: string | null
@@ -49,14 +53,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { token, userEmail, username } = useAuthStore()
 
   const [groups, setGroups] = useState<Group[]>([])
-  const [activeGroupId, setActiveGroupId] = useState("")
-  const [activeChatId, setActiveChatId] = useState("")
+  const [activeGroupId, setActiveGroupIdState] = useState<string>(() => localStorage.getItem("nexus_active_group_id") || "")
+  const [activeChatId, setActiveChatIdState] = useState<string>(() => localStorage.getItem("nexus_active_chat_id") || "")
   const [isLoading, setIsLoading] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const activeGroupIdRef = useRef(activeGroupId)
   const activeChatIdRef = useRef(activeChatId)
+
+  const setActiveGroupId = (id: string) => {
+    setActiveGroupIdState(id)
+    activeGroupIdRef.current = id
+    if (id) localStorage.setItem("nexus_active_group_id", id)
+  }
+
+  const setActiveChatId = (id: string) => {
+    setActiveChatIdState(id)
+    activeChatIdRef.current = id
+    if (id) localStorage.setItem("nexus_active_chat_id", id)
+  }
 
   useEffect(() => { activeGroupIdRef.current = activeGroupId }, [activeGroupId])
   useEffect(() => { activeChatIdRef.current = activeChatId }, [activeChatId])
@@ -81,59 +97,63 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       .catch(console.error)
   }, [token])
 
-  // Fetch groups (no more dummy tenant/workspace IDs)
+  // Fetch groups
   useEffect(() => {
-    if (!token) {
-      setGroups([])
-      setActiveGroupId("")
-      setActiveChatId("")
-      return
-    }
+    let isMounted = true
+    if (!token) return
 
     async function fetchGroups() {
       try {
         setIsLoading(true)
         const res = await apiClient.get("/api/groups")
+        if (!isMounted) return
         if (res.data.groups && res.data.groups.length > 0) {
-          const loadedGroups: Group[] = res.data.groups.map((g: Group) => ({
-            ...g,
-            members: g.members || [],
-            chats: g.chats ? g.chats.map((c: Chat) => ({ ...c, messages: [] })) : [],
-          }))
-          setGroups(loadedGroups)
+          const rawGroups = res.data.groups
+          setGroups((prevGroups) => {
+            return rawGroups.map((g: Group) => {
+              const prevGroup = prevGroups.find((pg) => pg.id === g.id)
+              return {
+                ...g,
+                members: g.members || [],
+                chats: g.chats ? g.chats.map((c: Chat) => {
+                  const prevChat = prevGroup?.chats.find((pc) => pc.id === c.id)
+                  return {
+                    ...c,
+                    messages: prevChat?.messages || [],
+                  }
+                }) : [],
+              }
+            })
+          })
 
-          const currentGroup = loadedGroups.find((g) => g.id === activeGroupIdRef.current)
-          if (!currentGroup) {
-            setActiveGroupId(loadedGroups[0].id)
-            if (loadedGroups[0].chats.length > 0) {
-              setActiveChatId(loadedGroups[0].chats[0].id)
-            }
-          } else {
-            const hasActiveChat = currentGroup.chats.some((c) => c.id === activeChatIdRef.current)
-            if (!hasActiveChat && currentGroup.chats.length > 0) {
-              setActiveChatId(currentGroup.chats[0].id)
-            }
+          const savedGroupId = localStorage.getItem("nexus_active_group_id")
+          const savedChatId = localStorage.getItem("nexus_active_chat_id")
+
+          const currentGroup = rawGroups.find((g: Group) => g.id === (activeGroupIdRef.current || savedGroupId)) || rawGroups[0]
+          setActiveGroupId(currentGroup.id)
+
+          const currentChat = currentGroup.chats?.find((c: Chat) => c.id === (activeChatIdRef.current || savedChatId)) || currentGroup.chats?.[0]
+          if (currentChat) {
+            setActiveChatId(currentChat.id)
           }
         }
+
       } catch (err) {
+
         console.error("Failed to fetch groups", err)
-        setError("Failed to load groups. Please refresh the page.")
+        if (isMounted) setError("Failed to load groups. Please refresh the page.")
       } finally {
-        setIsLoading(false)
+        if (isMounted) setIsLoading(false)
       }
     }
 
     fetchGroups()
+    return () => { isMounted = false }
   }, [token])
 
   // Socket connection
   const { isConnected, connectionError } = useSocket(token)
-
-  // Merge connection error into the general error state
-  useEffect(() => {
-    if (connectionError) setError(connectionError)
-    else if (isConnected) setError(null)
-  }, [connectionError, isConnected])
+  const combinedError = connectionError || error
 
   // Group CRUD
   const {
@@ -147,7 +167,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   } = useGroups({
     activeGroupIdRef,
     activeChatIdRef,
-    userEmail,
     groups,
     setGroups,
     setActiveGroupId,
@@ -158,9 +177,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Messages (socket listeners, history, send/delete/edit)
   const {
     isTyping,
+    streamingMessageId,
     sendMessage,
     deleteMessage,
     editMessage,
+    reactToMessage,
+    sendThreadReply,
+    loadThreadMessages,
   } = useMessages({
     activeGroupId,
     activeChatId,
@@ -186,7 +209,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       isTyping,
       isConnected,
       isLoading,
-      error,
+      error: combinedError,
+      streamingMessageId,
       sendMessage,
       createGroup,
       createChat,
@@ -197,18 +221,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       removeMember,
       deleteMessage,
       editMessage,
+      reactToMessage,
+      sendThreadReply,
+      loadThreadMessages,
       userEmail,
       username,
       profileImage,
     }),
     [
       groups, activeGroup, activeChat, activeGroupId, activeChatId,
-      isTyping, isConnected, isLoading, error,
+      isTyping, isConnected, isLoading, combinedError, streamingMessageId,
       sendMessage, createGroup, createChat, deleteGroup, deleteChat,
       joinGroup, leaveGroup, removeMember, deleteMessage, editMessage,
+      reactToMessage, sendThreadReply, loadThreadMessages,
       userEmail, username, profileImage,
     ]
   )
+
 
   return (
     <WorkspaceContext.Provider value={value}>

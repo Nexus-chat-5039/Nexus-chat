@@ -83,15 +83,18 @@ type oaiStreamChunk struct {
 
 func (o *OpenAICompatProvider) buildMessages(prompt, ragContext string) []oaiMessage {
 	msgs := make([]oaiMessage, 0, 2)
+	systemPrompt := "You are Nexus AI assistant, an intelligent pair programmer and workspace collaborator in a team chat channel. You have direct access to the recent conversation history in this channel and relevant knowledge context. When the user asks to summarize, explain, or answer questions about previous messages or what was discussed, reference and summarize the provided conversation history accurately."
 	if ragContext != "" {
-		msgs = append(msgs, oaiMessage{
-			Role:    "system",
-			Content: fmt.Sprintf("Use the following context to answer the user's question.\n\nContext:\n%s", ragContext),
-		})
+		systemPrompt += fmt.Sprintf("\n\n%s", ragContext)
 	}
+	msgs = append(msgs, oaiMessage{
+		Role:    "system",
+		Content: systemPrompt,
+	})
 	msgs = append(msgs, oaiMessage{Role: "user", Content: prompt})
 	return msgs
 }
+
 
 func (o *OpenAICompatProvider) apiURL() string {
 	base := strings.TrimRight(o.cfg.BaseURL, "/")

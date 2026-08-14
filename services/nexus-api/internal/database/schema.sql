@@ -128,6 +128,8 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     reply_to JSONB,
     reactions JSONB DEFAULT '[]',
+    thread_count INTEGER NOT NULL DEFAULT 0,
+    thread_last_reply_at TIMESTAMPTZ,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     is_edited BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -135,3 +137,33 @@ CREATE TABLE messages (
 );
 
 CREATE INDEX idx_msg_room_time ON messages(tenant_id, group_id, chat_id, created_at DESC);
+
+-- Message Reactions
+CREATE TABLE IF NOT EXISTS message_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
+    user_email VARCHAR(255) NOT NULL,
+    emoji VARCHAR(32) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_user_message_emoji UNIQUE (message_id, user_email, emoji)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON message_reactions(message_id);
+
+-- Thread Messages
+CREATE TABLE IF NOT EXISTS thread_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    chat_id UUID NOT NULL,
+    group_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    user_email VARCHAR(255) NOT NULL,
+    user_name VARCHAR(255),
+    user_avatar VARCHAR(512),
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_thread_parent_id ON thread_messages(parent_message_id);
+

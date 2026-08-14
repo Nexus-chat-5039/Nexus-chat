@@ -15,9 +15,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [resetMode, setResetMode] = useState(false)
-  const [resetEmail, setResetEmail] = useState("")
-  const [resetSent, setResetSent] = useState(false)
 
   const { token } = useAuthStore()
   const navigate = useNavigate()
@@ -58,9 +55,15 @@ export default function Login() {
       const { user, token: access_token } = await authService.login(email, password)
       useAuthStore.getState().login(access_token, user.email, user.display_name)
       navigate("/chat", { replace: true })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      setError(err.response?.data?.error || err.message || "Login failed")
+      const message =
+        typeof err === "object" && err !== null && "response" in err
+          ? ((err as { response?: { data?: { error?: string } } }).response?.data?.error)
+          : err instanceof Error
+          ? err.message
+          : "Login failed"
+      setError(message || "Login failed")
       setLoading(false)
     }
   }
@@ -101,24 +104,25 @@ export default function Login() {
 
           {/* Password */}
           <div className="login-field mb-5">
-            <div className="relative">
-              <NexusInput
-                label="Password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                placeholder="••••••••"
-                icon={<Lock className="w-4 h-4" />}
-              />
-              <button
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-[30px] text-nexus-muted hover:text-nexus-text transition-colors"
-                type="button"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <NexusInput
+              label="Password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              placeholder="••••••••"
+              icon={<Lock className="w-4 h-4" />}
+              rightElement={
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5 flex items-center justify-center"
+                  type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              }
+            />
           </div>
 
           {/* Sign in button */}

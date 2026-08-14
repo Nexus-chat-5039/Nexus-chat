@@ -1,10 +1,38 @@
 import { memo, useState, useMemo, useCallback, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter"
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
+import js from "react-syntax-highlighter/dist/esm/languages/prism/javascript"
+import ts from "react-syntax-highlighter/dist/esm/languages/prism/typescript"
+import py from "react-syntax-highlighter/dist/esm/languages/prism/python"
+import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash"
+import json from "react-syntax-highlighter/dist/esm/languages/prism/json"
+import sql from "react-syntax-highlighter/dist/esm/languages/prism/sql"
+import css from "react-syntax-highlighter/dist/esm/languages/prism/css"
+import markup from "react-syntax-highlighter/dist/esm/languages/prism/markup"
+import tsx from "react-syntax-highlighter/dist/esm/languages/prism/tsx"
+import jsx from "react-syntax-highlighter/dist/esm/languages/prism/jsx"
+
+SyntaxHighlighter.registerLanguage("javascript", js)
+SyntaxHighlighter.registerLanguage("js", js)
+SyntaxHighlighter.registerLanguage("typescript", ts)
+SyntaxHighlighter.registerLanguage("ts", ts)
+SyntaxHighlighter.registerLanguage("python", py)
+SyntaxHighlighter.registerLanguage("py", py)
+SyntaxHighlighter.registerLanguage("bash", bash)
+SyntaxHighlighter.registerLanguage("sh", bash)
+SyntaxHighlighter.registerLanguage("json", json)
+SyntaxHighlighter.registerLanguage("sql", sql)
+SyntaxHighlighter.registerLanguage("css", css)
+SyntaxHighlighter.registerLanguage("markup", markup)
+SyntaxHighlighter.registerLanguage("html", markup)
+SyntaxHighlighter.registerLanguage("xml", markup)
+SyntaxHighlighter.registerLanguage("tsx", tsx)
+SyntaxHighlighter.registerLanguage("jsx", jsx)
 import { getImageUrl } from "../api/config"
-import { Reply, Pencil, Trash2, Check, X } from "lucide-react"
+import { Reply, Pencil, Trash2, Check, X, MessageCircle } from "lucide-react"
+import { QuickReactionPicker, ReactionBar } from "./ReactionBar"
 import type { Message } from "../types"
 
 const COLORS = [
@@ -22,6 +50,17 @@ function getSenderColor(sender?: string) {
   return COLORS[Math.abs(hash % COLORS.length)]
 }
 
+function getRelativeTime(dateStr?: string): string {
+  if (!dateStr) return ""
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diff = Math.floor((now - then) / 1000)
+  if (diff < 60) return "just now"
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
 const CodeBlockHeader = memo(function CodeBlockHeader({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
 
@@ -35,7 +74,9 @@ const CodeBlockHeader = memo(function CodeBlockHeader({ language, code }: { lang
     <div className="bg-[#1a1a2e] px-4 py-1.5 text-[11px] text-nexus-muted/60 border-b border-white/[0.04] flex justify-between items-center select-none rounded-t-lg">
       <span className="lowercase font-mono">{language}</span>
       <button
+        type="button"
         onClick={handleCopy}
+        aria-label="Copy code to clipboard"
         className="hover:text-nexus-text transition-colors px-2 py-0.5 rounded hover:bg-white/5"
       >
         {copied ? <span className="text-emerald-400">Copied</span> : "Copy"}
@@ -48,9 +89,12 @@ type Props = {
   message: Message
   currentUserId: string
   currentUserImage?: string | null
+  isStreaming?: boolean
   onReply?: (message: Message) => void
   onDelete: (messageId: string, type: "everyone" | "me") => void
   onEdit?: (messageId: string, content: string) => void
+  onReact?: (emoji: string) => void
+  onOpenThread?: () => void
 }
 
 const MessageBubble = memo(function MessageBubble({
@@ -59,6 +103,9 @@ const MessageBubble = memo(function MessageBubble({
   onReply,
   onDelete,
   onEdit,
+  onReact,
+  onOpenThread,
+  isStreaming = false,
 }: Props) {
   const isMe = message.role === "user" && message.sender === currentUserId
   const isOtherUser = message.role === "user" && !isMe
@@ -66,6 +113,7 @@ const MessageBubble = memo(function MessageBubble({
 
   const [showMenu, setShowMenu] = useState(false)
   const [showDeleteOptions, setShowDeleteOptions] = useState(false)
+  const [showReactionPicker, setShowReactionPicker] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
   const [entranceDone, setEntranceDone] = useState(false)
@@ -85,7 +133,7 @@ const MessageBubble = memo(function MessageBubble({
     bubbleRef.current.style.animation = "msgEnter 0.25s ease-out forwards"
     const timer = setTimeout(() => setEntranceDone(true), 250)
     return () => clearTimeout(timer)
-  }, [])
+  }, [entranceDone])
 
   const handleSaveEdit = useCallback(() => {
     if (onEdit && editContent.trim() !== message.content) {
@@ -93,6 +141,11 @@ const MessageBubble = memo(function MessageBubble({
     }
     setIsEditing(false)
   }, [onEdit, editContent, message.content, message.id])
+
+  const handleReact = useCallback((emoji: string) => {
+    onReact?.(emoji)
+    setShowReactionPicker(false)
+  }, [onReact])
 
   if (message.is_deleted) {
     return (
@@ -119,7 +172,7 @@ const MessageBubble = memo(function MessageBubble({
         {!isMe && (
           <div className="flex-shrink-0 w-7 h-7 rounded-full bg-nexus-surface overflow-hidden flex items-center justify-center border border-white/[0.04] mt-0.5 self-end">
             {message.sender_image ? (
-              <img src={getImageUrl(message.sender_image)} alt="" className="w-full h-full object-cover" loading="lazy" />
+              <img src={getImageUrl(message.sender_image)} alt={message.sender_name || message.sender || "User"} className="w-full h-full object-cover" loading="lazy" />
             ) : (
               <span className="text-[10px] text-nexus-muted/70 font-bold uppercase">
                 {(message.sender_name || message.sender || "?")[0]}
@@ -128,166 +181,226 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {/* Bubble */}
-        <div
-          className={`
-            relative px-3.5 py-2 rounded-2xl shadow-sm
-            ${isMe
-              ? "bg-nexus-primary/90 text-white rounded-br-sm"
-              : isAI
-              ? "bg-gradient-to-br from-nexus-surface to-nexus-card/80 text-nexus-text rounded-bl-sm border border-nexus-primary/10"
-              : "bg-nexus-surface text-nexus-text rounded-bl-sm border border-white/[0.04]"
-            }
-          `}
-        >
-          {/* Context menu */}
-          <div className={`
-            absolute top-0.5 ${isMe ? "left-0 -translate-x-full pr-1" : "right-0 translate-x-full pl-1"}
-            flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150
-          `}>
-            <button
-              onClick={() => { setShowMenu(!showMenu); setShowDeleteOptions(false) }}
-              className="p-1 text-nexus-muted/60 hover:text-nexus-text hover:bg-nexus-surface rounded-md transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
-              </svg>
-            </button>
+        {/* Bubble + Reactions column */}
+        <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+          {/* Bubble */}
+          <div
+            className={`
+              relative px-3.5 py-2 rounded-2xl shadow-sm
+              ${isMe
+                ? "bg-nexus-primary/90 text-white rounded-br-sm"
+                : isAI
+                ? `bg-gradient-to-br from-nexus-surface to-nexus-card/80 text-nexus-text rounded-bl-sm border ${isStreaming ? "border-nexus-primary/30" : "border-nexus-primary/10"}`
+                : "bg-nexus-surface text-nexus-text rounded-bl-sm border border-white/[0.04]"
+              }
+              ${isStreaming ? "streaming-bubble" : ""}
+            `}
+          >
+            {/* Context menu + reaction picker */}
+            <div className={`
+              absolute top-0.5 ${isMe ? "left-0 -translate-x-full pr-1" : "right-0 translate-x-full pl-1"}
+              flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150
+            `}>
+              {/* Quick reaction trigger */}
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Add reaction"
+                  onClick={() => { setShowReactionPicker(!showReactionPicker); setShowMenu(false) }}
+                  className="p-1 text-nexus-muted/60 hover:text-nexus-text hover:bg-nexus-surface rounded-md transition-colors text-sm"
+                >
+                  😊
+                </button>
+                <QuickReactionPicker
+                  visible={showReactionPicker}
+                  onSelect={handleReact}
+                />
+              </div>
 
-            {showMenu && (
-              <div className="absolute top-7 z-20 w-32 rounded-xl border border-nexus-border/50 bg-nexus-card/95 backdrop-blur-xl shadow-xl py-1 overflow-hidden"
-                style={{ [isMe ? "right" : "left"]: 0 }}
+              <button
+                type="button"
+                aria-label="Message options"
+                onClick={() => { setShowMenu(!showMenu); setShowDeleteOptions(false); setShowReactionPicker(false) }}
+                className="p-1 text-nexus-muted/60 hover:text-nexus-text hover:bg-nexus-surface rounded-md transition-colors"
               >
-                {!showDeleteOptions ? (
-                  <>
-                    <button
-                      onClick={() => { onReply?.(message); setShowMenu(false) }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
-                    >
-                      <Reply size={12} /> Reply
-                    </button>
-                    {isMe && (
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+                </svg>
+              </button>
+
+              {showMenu && (
+                <div className="absolute top-14 z-20 w-36 rounded-xl border border-nexus-border/50 bg-nexus-card/95 backdrop-blur-xl shadow-xl py-1 overflow-hidden"
+                  style={{ [isMe ? "right" : "left"]: 0 }}
+                >
+                  {!showDeleteOptions ? (
+                    <>
                       <button
-                        onClick={() => { setIsEditing(true); setShowMenu(false) }}
+                        onClick={() => { onReply?.(message); setShowMenu(false) }}
                         className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
                       >
-                        <Pencil size={12} /> Edit
+                        <Reply size={12} /> Reply
                       </button>
-                    )}
-                    <div className="h-px bg-nexus-border/30 my-0.5" />
-                    <button
-                      onClick={() => setShowDeleteOptions(true)}
-                      className="w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors flex items-center gap-2"
-                    >
-                      <Trash2 size={12} /> Delete
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="px-3 py-1 text-[9px] text-nexus-muted uppercase font-bold tracking-wider">Delete?</div>
-                    <button
-                      onClick={() => { onDelete(message.id, "me"); setShowMenu(false); setShowDeleteOptions(false) }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors"
-                    >
-                      For Me
-                    </button>
-                    {isMe && (
                       <button
-                        onClick={() => { onDelete(message.id, "everyone"); setShowMenu(false); setShowDeleteOptions(false) }}
-                        className="w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors"
+                        onClick={() => { onOpenThread?.(); setShowMenu(false) }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
                       >
-                        For Everyone
+                        <MessageCircle size={12} /> Reply in thread
                       </button>
-                    )}
-                    <div className="h-px bg-nexus-border/30 my-0.5" />
-                    <button
-                      onClick={() => setShowDeleteOptions(false)}
-                      className="w-full text-left px-3 py-1 text-[10px] text-nexus-muted hover:text-nexus-text transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Sender name */}
-          {isOtherUser && message.sender_name && (
-            <p className="text-[11px] font-semibold mb-0.5" style={{ color: senderColor }}>
-              {message.sender_name}
-            </p>
-          )}
-
-          {/* Reply reference */}
-          {message.replyTo && (
-            <div
-              className="mb-1.5 pl-2 border-l-2 border-nexus-primary/40 bg-black/10 rounded-r-md py-1 pr-2 cursor-pointer hover:bg-black/15 transition-colors"
-              onClick={() => document.getElementById("msg_" + message.replyTo?.id)?.scrollIntoView({ behavior: "smooth", block: "center" })}
-            >
-              <p className="text-[10px] font-semibold text-nexus-primary/80">{message.replyTo.sender}</p>
-              <p className="text-[11px] text-nexus-muted truncate">{message.replyTo.content}</p>
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="text-[14px] leading-relaxed whitespace-pre-wrap">
-            {isEditing ? (
-              <div className="flex flex-col gap-2 min-w-[200px]">
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="bg-black/20 text-white rounded-lg p-2 text-sm w-full outline-none border border-white/10 resize-none min-h-[60px] focus:border-nexus-primary/50"
-                  autoFocus
-                />
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setIsEditing(false)} className="text-[11px] text-nexus-muted hover:text-white px-2 py-1 rounded transition-colors flex items-center gap-1">
-                    <X size={10} /> Cancel
-                  </button>
-                  <button onClick={handleSaveEdit} className="text-[11px] bg-emerald-600/80 text-white px-3 py-1 rounded-md font-medium hover:bg-emerald-500 transition-colors flex items-center gap-1">
-                    <Check size={10} /> Save
-                  </button>
+                      {isMe && (
+                        <button
+                          onClick={() => { setIsEditing(true); setShowMenu(false) }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                      )}
+                      <div className="h-px bg-nexus-border/30 my-0.5" />
+                      <button
+                        onClick={() => setShowDeleteOptions(true)}
+                        className="w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors flex items-center gap-2"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-3 py-1 text-[9px] text-nexus-muted uppercase font-bold tracking-wider">Delete?</div>
+                      <button
+                        onClick={() => { onDelete(message.id, "me"); setShowMenu(false); setShowDeleteOptions(false) }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors"
+                      >
+                        For Me
+                      </button>
+                      {isMe && (
+                        <button
+                          onClick={() => { onDelete(message.id, "everyone"); setShowMenu(false); setShowDeleteOptions(false) }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors"
+                        >
+                          For Everyone
+                        </button>
+                      )}
+                      <div className="h-px bg-nexus-border/30 my-0.5" />
+                      <button
+                        onClick={() => setShowDeleteOptions(false)}
+                        className="w-full text-left px-3 py-1 text-[10px] text-nexus-muted hover:text-nexus-text transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
                 </div>
+              )}
+            </div>
+
+            {/* Sender name */}
+            {isOtherUser && message.sender_name && (
+              <p className="text-[11px] font-semibold mb-0.5" style={{ color: senderColor }}>
+                {message.sender_name}
+              </p>
+            )}
+
+            {/* Reply reference */}
+            {message.replyTo && (
+              <div
+                className="mb-1.5 pl-2 border-l-2 border-nexus-primary/40 bg-black/10 rounded-r-md py-1 pr-2 cursor-pointer hover:bg-black/15 transition-colors"
+                onClick={() => document.getElementById("msg_" + message.replyTo?.id)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              >
+                <p className="text-[10px] font-semibold text-nexus-primary/80">{message.replyTo.sender}</p>
+                <p className="text-[11px] text-nexus-muted truncate">{message.replyTo.content}</p>
               </div>
-            ) : isAI ? (
-              <div className="prose prose-invert prose-sm max-w-none [&_pre]:m-0 [&_pre]:bg-transparent [&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_ul]:mb-1.5 [&_ol]:mb-1.5 [&_li]:mb-0.5 [&_code]:text-emerald-300 [&_code]:bg-white/5 [&_code]:px-1 [&_code]:rounded [&_code]:text-[13px]">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    code({ className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "")
-                      const codeString = String(children).replace(/\n$/, "")
-                      return match ? (
-                        <div className="rounded-lg overflow-hidden my-2 border border-white/[0.06]">
-                          <CodeBlockHeader language={match[1]} code={codeString} />
-                          <SyntaxHighlighter
-                            style={vscDarkPlus}
-                            language={match[1]}
-                            PreTag="div"
-                            customStyle={{ margin: 0, borderRadius: 0, fontSize: "12px", padding: "12px 16px" }}
-                          >
-                            {codeString}
-                          </SyntaxHighlighter>
-                        </div>
-                      ) : (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      )
-                    },
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              message.content
+            )}
+
+            {/* Content */}
+            <div className="text-[14px] leading-relaxed whitespace-pre-wrap">
+              {isEditing ? (
+                <div className="flex flex-col gap-2 min-w-[200px]">
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="bg-black/20 text-white rounded-lg p-2 text-sm w-full outline-none border border-white/10 resize-none min-h-[60px] focus:border-nexus-primary/50"
+                    autoFocus
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setIsEditing(false)} className="text-[11px] text-nexus-muted hover:text-white px-2 py-1 rounded transition-colors flex items-center gap-1">
+                      <X size={10} /> Cancel
+                    </button>
+                    <button onClick={handleSaveEdit} className="text-[11px] bg-emerald-600/80 text-white px-3 py-1 rounded-md font-medium hover:bg-emerald-500 transition-colors flex items-center gap-1">
+                      <Check size={10} /> Save
+                    </button>
+                  </div>
+                </div>
+              ) : isAI ? (
+                <div className="prose prose-invert prose-sm max-w-none [&_pre]:m-0 [&_pre]:bg-transparent [&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_ul]:mb-1.5 [&_ol]:mb-1.5 [&_li]:mb-0.5 [&_code]:text-emerald-300 [&_code]:bg-white/5 [&_code]:px-1 [&_code]:rounded [&_code]:text-[13px]">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({ className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || "")
+                        const codeString = String(children).replace(/\n$/, "")
+                        return match ? (
+                          <div className="rounded-lg overflow-hidden my-2 border border-white/[0.06]">
+                            <CodeBlockHeader language={match[1]} code={codeString} />
+                            <SyntaxHighlighter
+                              style={vscDarkPlus}
+                              language={match[1]}
+                              PreTag="div"
+                              customStyle={{ margin: 0, borderRadius: 0, fontSize: "12px", padding: "12px 16px" }}
+                            >
+                              {codeString}
+                            </SyntaxHighlighter>
+                          </div>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        )
+                      },
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                  {/* Streaming cursor */}
+                  {isStreaming && (
+                    <span className="streaming-cursor" aria-hidden="true">▍</span>
+                  )}
+                </div>
+              ) : (
+                message.content
+              )}
+            </div>
+
+            {/* Edited indicator */}
+            {message.is_edited && (
+              <span className="text-[9px] text-nexus-muted/40 italic mt-0.5 block">edited</span>
             )}
           </div>
 
-          {/* Edited indicator */}
-          {message.is_edited && (
-            <span className="text-[9px] text-nexus-muted/40 italic mt-0.5 block">edited</span>
+          {/* Reaction badges */}
+          {message.reactions && Object.keys(message.reactions).length > 0 && (
+            <ReactionBar
+              reactions={message.reactions}
+              currentUserEmail={currentUserId}
+              onReact={handleReact}
+              isMe={isMe}
+            />
+          )}
+
+          {/* Thread indicator */}
+          {(message.thread_count || 0) > 0 && (
+            <button
+              type="button"
+              onClick={onOpenThread}
+              className={`flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all duration-150 hover:bg-nexus-primary/10 ${
+                isMe ? "text-white/70 hover:text-white" : "text-nexus-primary/70 hover:text-nexus-primary"
+              }`}
+              aria-label={`${message.thread_count} thread replies`}
+            >
+              <MessageCircle className="w-3 h-3" />
+              <span>{message.thread_count} {message.thread_count === 1 ? "reply" : "replies"}</span>
+              {message.thread_last_reply_at && (
+                <span className="text-nexus-muted/50">· {getRelativeTime(message.thread_last_reply_at)}</span>
+              )}
+            </button>
           )}
         </div>
       </div>
@@ -296,6 +409,25 @@ const MessageBubble = memo(function MessageBubble({
         @keyframes msgEnter {
           from { opacity: 0; transform: translateY(10px) scale(0.98); }
           to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        @keyframes shimmer {
+          0% { border-color: rgba(164, 22, 26, 0.1); }
+          50% { border-color: rgba(164, 22, 26, 0.35); }
+          100% { border-color: rgba(164, 22, 26, 0.1); }
+        }
+        .streaming-cursor {
+          display: inline;
+          color: rgb(164, 22, 26);
+          font-weight: 700;
+          animation: blink 0.8s step-end infinite;
+          margin-left: 1px;
+        }
+        .streaming-bubble {
+          animation: shimmer 2s ease-in-out infinite;
         }
       `}</style>
     </div>

@@ -1,5 +1,8 @@
 # Build Stage
-FROM golang:1.25-alpine AS builder
+FROM golang:alpine AS builder
+
+
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 
@@ -10,7 +13,8 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/api ./cmd/api
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /go/bin/api ./cmd/api
+
 
 # Final Stage
 FROM gcr.io/distroless/static:nonroot

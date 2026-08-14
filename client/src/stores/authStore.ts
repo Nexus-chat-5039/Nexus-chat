@@ -16,9 +16,7 @@ interface AuthState {
   getToken: () => string | null;
 }
 
-const parseUsername = (email: string) => {
-  return email.split("@")[0];
-};
+
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem("nexus_token"),

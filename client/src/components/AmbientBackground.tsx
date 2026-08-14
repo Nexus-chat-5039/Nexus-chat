@@ -4,18 +4,20 @@ export default function AmbientBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    if (prefersReduced) return
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+    if (mediaQuery.matches) return
 
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    let animationFrameId: number
+    let animationFrameId: number | null = null
+    let isRunning = true
     let width = window.innerWidth
     let height = window.innerHeight
     
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
     const setSize = () => {
       width = window.innerWidth
       height = window.innerHeight
@@ -23,7 +25,12 @@ export default function AmbientBackground() {
       canvas.height = height
     }
     setSize()
-    window.addEventListener("resize", setSize)
+
+    const onResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(setSize, 150)
+    }
+    window.addEventListener("resize", onResize)
 
     class Particle {
       x: number
@@ -35,8 +42,8 @@ export default function AmbientBackground() {
       constructor() {
         this.x = Math.random() * width
         this.y = Math.random() * height
-        this.vx = (Math.random() - 0.5) * 0.5
-        this.vy = (Math.random() - 0.5) * 0.5
+        this.vx = (Math.random() - 0.5) * 0.4
+        this.vy = (Math.random() - 0.5) * 0.4
         this.radius = Math.random() * 1.5 + 0.5
       }
 
@@ -52,13 +59,13 @@ export default function AmbientBackground() {
         if (!ctx) return
         ctx.beginPath()
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2)
-        ctx.fillStyle = "rgba(224, 60, 49, 0.4)" // Nexus primary red, semi-transparent
+        ctx.fillStyle = "rgba(224, 60, 49, 0.4)"
         ctx.fill()
       }
     }
 
-    // Number of particles depends on screen size (roughly 1 per 15000 pixels)
-    const particleCount = Math.floor((width * height) / 15000)
+    // Number of particles depends on screen size (capped for high performance)
+    const particleCount = Math.min(Math.floor((width * height) / 18000), 60)
     const particles = Array.from({ length: particleCount }, () => new Particle())
 
     const drawLines = () => {
@@ -68,12 +75,11 @@ export default function AmbientBackground() {
           const dy = particles[i].y - particles[j].y
           const distance = Math.sqrt(dx * dx + dy * dy)
 
-          if (distance < 150) {
+          if (distance < 140) {
             ctx.beginPath()
             ctx.moveTo(particles[i].x, particles[i].y)
             ctx.lineTo(particles[j].x, particles[j].y)
-            // Opacity based on distance (closer = more opaque)
-            const opacity = (1 - distance / 150) * 0.15
+            const opacity = (1 - distance / 140) * 0.15
             ctx.strokeStyle = `rgba(224, 60, 49, ${opacity})`
             ctx.lineWidth = 1
             ctx.stroke()
@@ -83,6 +89,7 @@ export default function AmbientBackground() {
     }
 
     const animate = () => {
+      if (!isRunning) return
       ctx.clearRect(0, 0, width, height)
       
       particles.forEach((p) => {
@@ -94,11 +101,30 @@ export default function AmbientBackground() {
       animationFrameId = requestAnimationFrame(animate)
     }
 
-    animate()
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        isRunning = false
+        if (animationFrameId !== null) {
+          cancelAnimationFrame(animationFrameId)
+          animationFrameId = null
+        }
+      } else {
+        if (!isRunning) {
+          isRunning = true
+          animationFrameId = requestAnimationFrame(animate)
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    animationFrameId = requestAnimationFrame(animate)
 
     return () => {
-      window.removeEventListener("resize", setSize)
-      cancelAnimationFrame(animationFrameId)
+      isRunning = false
+      window.removeEventListener("resize", onResize)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+      if (resizeTimer) clearTimeout(resizeTimer)
+      if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
     }
   }, [])
 

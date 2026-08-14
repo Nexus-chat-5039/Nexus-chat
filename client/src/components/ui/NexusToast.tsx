@@ -31,6 +31,13 @@ const bgMap = {
 export default function NexusToast({ toast, onDismiss }: NexusToastProps) {
   const ref = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLDivElement>(null)
+  const onDismissRef = useRef(onDismiss)
+  const toastIdRef = useRef(toast.id)
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss
+    toastIdRef.current = toast.id
+  }, [onDismiss, toast.id])
 
   useEffect(() => {
     const el = ref.current
@@ -50,7 +57,7 @@ export default function NexusToast({ toast, onDismiss }: NexusToastProps) {
     gsap.fromTo(
       progress,
       { scaleX: 1 },
-      { scaleX: 0, duration: 3, ease: "linear", onComplete: () => onDismiss(toast.id) }
+      { scaleX: 0, duration: 3, ease: "linear", onComplete: () => onDismissRef.current(toastIdRef.current) }
     )
 
     return () => {
@@ -68,13 +75,15 @@ export default function NexusToast({ toast, onDismiss }: NexusToastProps) {
       opacity: 0,
       duration: prefersReduced ? 0.01 : 0.2,
       ease: "power2.in",
-      onComplete: () => onDismiss(toast.id),
+      onComplete: () => onDismissRef.current(toastIdRef.current),
     })
   }
 
   return (
     <div
       ref={ref}
+      role={toast.type === "error" ? "alert" : "status"}
+      aria-live="polite"
       className={cn(
         "relative w-72 rounded-xl border backdrop-blur-md overflow-hidden",
         "shadow-lg shadow-black/30",
@@ -86,7 +95,9 @@ export default function NexusToast({ toast, onDismiss }: NexusToastProps) {
         <p className="text-sm text-nexus-text flex-1">{toast.message}</p>
         <button
           onClick={handleDismiss}
-          className="text-nexus-muted hover:text-nexus-text transition-colors"
+          type="button"
+          aria-label="Dismiss notification"
+          className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5"
         >
           <X className="w-3.5 h-3.5" />
         </button>

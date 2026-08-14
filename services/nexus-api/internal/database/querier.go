@@ -56,6 +56,8 @@ type Querier interface {
 	// Message Queries
 	// ============================================================
 	ListMessagesByChat(ctx context.Context, arg ListMessagesByChatParams) ([]ListMessagesByChatRow, error)
+	ListThreadMessages(ctx context.Context, parentMessageID pgtype.UUID) ([]ListThreadMessagesRow, error)
+
 	ListWorkspaceMembers(ctx context.Context, workspaceID pgtype.UUID) ([]ListWorkspaceMembersRow, error)
 	ListWorkspacesByTenant(ctx context.Context, arg ListWorkspacesByTenantParams) ([]Workspace, error)
 	ListWorkspacesByUser(ctx context.Context, userID pgtype.UUID) ([]Workspace, error)

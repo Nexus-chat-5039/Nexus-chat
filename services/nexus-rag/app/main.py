@@ -6,7 +6,9 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 
+import torch
 import grpc
+
 import uvicorn
 from fastapi import FastAPI
 

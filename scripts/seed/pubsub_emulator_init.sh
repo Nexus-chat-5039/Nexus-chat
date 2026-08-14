@@ -49,11 +49,13 @@ subs = {
 for topic in topics:
     url = f"{base}/topics/{topic}"
     try:
-        req = urllib.request.Request(url, method="PUT", data=b"")
+        req = urllib.request.Request(url, method="PUT", data=b"{}",
+                                     headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req)
         print(f"  Created topic: {topic}")
     except Exception as e:
         print(f"  Topic {topic}: {e}")
+
 
 for sub_name, topic_name in subs.items():
     url = f"{base}/subscriptions/{sub_name}"

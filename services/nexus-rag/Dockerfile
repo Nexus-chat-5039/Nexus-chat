@@ -18,11 +18,12 @@ COPY services/nexus-rag/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip
 
 RUN pip install --no-cache-dir \
-    torch==2.2.1 \
+    torch==2.5.1 \
     --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir \
     -r /app/requirements.txt
+
 
 COPY proto/ /app/proto/
 

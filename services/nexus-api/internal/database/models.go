@@ -63,21 +63,46 @@ type GroupMember struct {
 }
 
 type Message struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	GroupID     pgtype.UUID        `json:"group_id"`
-	ChatID      pgtype.UUID        `json:"chat_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Role        string             `json:"role"`
-	Content     string             `json:"content"`
-	ReplyTo     []byte             `json:"reply_to"`
-	Reactions   []byte             `json:"reactions"`
-	IsDeleted   bool               `json:"is_deleted"`
-	IsEdited    bool               `json:"is_edited"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	GroupID           pgtype.UUID        `json:"group_id"`
+	ChatID            pgtype.UUID        `json:"chat_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	Role              string             `json:"role"`
+	Content           string             `json:"content"`
+	ReplyTo           []byte             `json:"reply_to"`
+	Reactions         []byte             `json:"reactions"`
+	ThreadCount       int32              `json:"thread_count"`
+	ThreadLastReplyAt pgtype.Timestamptz `json:"thread_last_reply_at"`
+	IsDeleted         bool               `json:"is_deleted"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
+
+type MessageReaction struct {
+	ID        pgtype.UUID        `json:"id"`
+	MessageID pgtype.UUID        `json:"message_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	UserEmail string             `json:"user_email"`
+	Emoji     string             `json:"emoji"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ThreadMessage struct {
+	ID              pgtype.UUID        `json:"id"`
+	ParentMessageID pgtype.UUID        `json:"parent_message_id"`
+	ChatID          pgtype.UUID        `json:"chat_id"`
+	GroupID         pgtype.UUID        `json:"group_id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	UserEmail       string             `json:"user_email"`
+	UserName        pgtype.Text        `json:"user_name"`
+	UserAvatar      pgtype.Text        `json:"user_avatar"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 
 type Tenant struct {
 	ID        pgtype.UUID        `json:"id"`

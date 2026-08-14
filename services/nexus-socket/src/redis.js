@@ -51,13 +51,15 @@ async function setupAIStreamSubscriber(io) {
       const parts = channel.split(':');
       const chatId = parts.slice(1, -1).join(':'); // Handle UUIDs with colons
 
-      // Emit to all clients in the Socket.IO room for this chat
-      io.to(`chat:${chatId}`).emit('ai_stream_chunk', {
+      // Emit only to local clients in the Socket.IO room for this chat
+      // (prevents double-emission through the @socket.io/redis-adapter)
+      io.local.to(`chat:${chatId}`).emit('ai_stream_chunk', {
         chatId,
         delta: chunk.delta || '',
         isFinal: chunk.is_final || false,
         messageId: chunk.message_id || '',
       });
+
 
       if (chunk.is_final) {
         console.log(`[ai-stream] Final chunk for chat:${chatId}`);

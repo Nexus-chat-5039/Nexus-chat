@@ -54,6 +54,32 @@ func (c *PubSubConsumer) Start(ctx context.Context) error {
 	return err
 }
 
+func (c *PubSubConsumer) StartEmbedConsumer(ctx context.Context, embedSubID string) error {
+	sub := c.client.Subscription(embedSubID)
+
+	log.Printf("Starting Pub/Sub embed consumer on subscription: %s", embedSubID)
+
+	err := sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+		var job orchestrator.EmbedJob
+		if err := json.Unmarshal(msg.Data, &job); err != nil {
+			log.Printf("Failed to unmarshal embed message: %v", err)
+			msg.Nack()
+			return
+		}
+
+		if err := c.orchestrator.ProcessEmbed(ctx, job); err != nil {
+			log.Printf("Failed to process embed job: %v", err)
+			msg.Nack()
+			return
+		}
+
+		msg.Ack()
+	})
+
+	return err
+}
+
+
 func (c *PubSubConsumer) Close() error {
 	return c.client.Close()
 }

@@ -6,9 +6,12 @@ __pycache__/
 .DS_Store
 # Environment files
 .env
+.env.local
+.env*.local
 nexus-rag/.env
 env
 .venv   
+
 
 # IDE settings
 .idea/
