@@ -16,14 +16,32 @@ const config = require('./config');
  * Returns the adapter instance to be attached via io.adapter().
  */
 async function setupRedisAdapter(io) {
-  const pubClient = createClient({ url: config.REDIS_URL });
+  if (!config.REDIS_URL || (process.env.ENV === 'production' && (config.REDIS_URL.includes('localhost') || config.REDIS_URL.includes('127.0.0.1')))) {
+    console.log('[redis] No external REDIS_URL provided — running with in-memory Socket.IO adapter');
+    return null;
+  }
+
+  const clientOptions = {
+    url: config.REDIS_URL,
+    socket: {
+      connectTimeout: 3000,
+      reconnectStrategy: (retries) => {
+        if (retries > 3) return false;
+        return 1000;
+      },
+    },
+  };
+
+  const pubClient = createClient(clientOptions);
   const subClient = pubClient.duplicate();
 
-  pubClient.on('error', (err) => console.error('[redis-adapter] Pub client error:', err.message));
-  subClient.on('error', (err) => console.error('[redis-adapter] Sub client error:', err.message));
+  pubClient.on('error', (err) => console.warn('[redis-adapter] Pub client warning:', err.message));
+  subClient.on('error', (err) => console.warn('[redis-adapter] Sub client warning:', err.message));
 
-  await pubClient.connect();
-  await subClient.connect();
+  await Promise.race([
+    Promise.all([pubClient.connect(), subClient.connect()]),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connection timeout')), 3000)),
+  ]);
 
   io.adapter(createAdapter(pubClient, subClient));
   console.log('[redis] Socket.IO Redis adapter connected');
@@ -38,9 +56,28 @@ async function setupRedisAdapter(io) {
  * When a chunk arrives, it is emitted to the Socket.IO room for that chat.
  */
 async function setupAIStreamSubscriber(io) {
-  const subscriber = createClient({ url: config.REDIS_URL });
-  subscriber.on('error', (err) => console.error('[redis-ai-stream] Error:', err.message));
-  await subscriber.connect();
+  if (!config.REDIS_URL || (process.env.ENV === 'production' && (config.REDIS_URL.includes('localhost') || config.REDIS_URL.includes('127.0.0.1')))) {
+    return null;
+  }
+
+  const subscriber = createClient({
+    url: config.REDIS_URL,
+    socket: {
+      connectTimeout: 3000,
+      reconnectStrategy: (retries) => {
+        if (retries > 3) return false;
+        return 1000;
+      },
+    },
+  });
+
+  subscriber.on('error', (err) => console.warn('[redis-ai-stream] Warning:', err.message));
+
+  await Promise.race([
+    subscriber.connect(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Redis AI subscriber timeout')), 3000)),
+  ]);
+
 
   // Use pattern subscribe to catch all chat rooms
   await subscriber.pSubscribe('room:*:ai_stream', (message, channel) => {

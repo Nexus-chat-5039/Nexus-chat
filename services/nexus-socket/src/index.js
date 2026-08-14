@@ -77,19 +77,28 @@ async function main() {
   // ---- JWT Auth ----
   io.use(jwtAuthMiddleware);
 
+  // ---- Start Server Immediately so Cloud Run Healthcheck Passes in <50ms ----
+  httpServer.listen(config.PORT, () => {
+    console.log('='.repeat(50));
+    console.log(`nexus-socket listening on port ${config.PORT}`);
+    console.log(`  Health:  http://localhost:${config.PORT}/health`);
+    console.log(`  Ready:   http://localhost:${config.PORT}/ready`);
+    console.log('='.repeat(50));
+  });
+
   // ---- Redis Adapter (horizontal scaling) ----
   try {
     const clients = await setupRedisAdapter(io);
-    redisClient = clients.pubClient;
+    if (clients) redisClient = clients.pubClient;
   } catch (err) {
-    console.warn('[startup] Redis adapter failed — running without horizontal scaling:', err.message);
+    console.warn('[startup] Redis adapter warning:', err.message);
   }
 
   // ---- AI Stream Subscriber (Redis PubSub → Socket.IO) ----
   try {
     await setupAIStreamSubscriber(io);
   } catch (err) {
-    console.warn('[startup] AI stream subscriber failed:', err.message);
+    console.warn('[startup] AI stream subscriber warning:', err.message);
   }
 
   // ---- PostgreSQL Pool ----
@@ -136,9 +145,12 @@ async function main() {
     console.warn('[startup] Postgres connection/init warning:', err.message);
   }
 
-
   // ---- Pub/Sub (AI inference trigger) ----
-  await initPubSub();
+  try {
+    await initPubSub();
+  } catch (err) {
+    console.warn('[startup] PubSub init warning:', err.message);
+  }
 
   // ---- Connection Handler ----
   io.on('connection', (socket) => {
@@ -155,14 +167,6 @@ async function main() {
     });
   });
 
-  // ---- Start Server ----
-  httpServer.listen(config.PORT, () => {
-    console.log('='.repeat(50));
-    console.log(`nexus-socket listening on port ${config.PORT}`);
-    console.log(`  Health:  http://localhost:${config.PORT}/health`);
-    console.log(`  Ready:   http://localhost:${config.PORT}/ready`);
-    console.log('='.repeat(50));
-  });
 
   // ---- Graceful Shutdown ----
   const shutdown = async (signal) => {
