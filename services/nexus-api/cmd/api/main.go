@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -76,21 +77,42 @@ func main() {
 	}
 	router := gin.Default()
 
-	// CORS with Strict Whitelist
-	allowedOrigins := map[string]bool{
-		cfg.CORSOrigin:            true,
-		"https://nexuschat.app":   true,
-		"http://localhost:5173":   cfg.Env != "production",
-		"http://localhost:3000":   cfg.Env != "production",
+	// CORS with Multi-Origin Whitelist
+	corsOrigins := strings.Split(cfg.CORSOrigin, ",")
+	for i := range corsOrigins {
+		corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
+	}
+
+	isAllowedOrigin := func(origin string) bool {
+		if origin == "" {
+			return false
+		}
+		for _, o := range corsOrigins {
+			if o != "" && (o == "*" || o == origin) {
+				return true
+			}
+		}
+		// Whitelist verified production domains and dev origins
+		if origin == "https://www.nexusainow.online" ||
+			origin == "https://nexusainow.online" ||
+			origin == "https://nexuschat.app" ||
+			strings.HasSuffix(origin, ".nexusainow.online") ||
+			strings.HasSuffix(origin, ".web.app") ||
+			strings.HasSuffix(origin, ".firebaseapp.com") ||
+			strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") {
+			return true
+		}
+		return false
 	}
 
 	router.Use(func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		if origin != "" && allowedOrigins[origin] {
+		if isAllowedOrigin(origin) {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-		} else if origin == "" && cfg.CORSOrigin != "" {
-			c.Header("Access-Control-Allow-Origin", cfg.CORSOrigin)
+		} else if origin == "" && len(corsOrigins) > 0 && corsOrigins[0] != "" {
+			c.Header("Access-Control-Allow-Origin", corsOrigins[0])
 		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept, X-Requested-With")
@@ -100,6 +122,11 @@ func main() {
 			return
 		}
 		c.Next()
+	})
+
+	// Favicon (Avoids 404 in logs when visited directly in browser)
+	router.GET("/favicon.ico", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
 	})
 
 	// ---- Health & Readiness Probes ----
