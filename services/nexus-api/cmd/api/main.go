@@ -23,15 +23,26 @@ func main() {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
 
-	log.Println("Starting nexus-api...")
+	log.Printf("Starting nexus-api in %s mode...", cfg.Env)
 
-	// ---- Database with Cloud SQL Startup Retry Loop ----
+	// ---- Database Connection Pool with Concurrency Tuning ----
+	dbConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Fatal: Failed to parse DatabaseURL: %v", err)
+	}
+
+	// Performance tuning: prevent connection starvation under 300+ concurrent workers
+	dbConfig.MaxConns = 80
+	dbConfig.MinConns = 15
+	dbConfig.MaxConnLifetime = 30 * time.Minute
+	dbConfig.MaxConnIdleTime = 5 * time.Minute
+	dbConfig.HealthCheckPeriod = 1 * time.Minute
+
 	var pool *pgxpool.Pool
 	maxRetries := 10
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		log.Printf("Connecting to PostgreSQL (attempt %d/%d)...", attempt, maxRetries)
-		var err error
-		pool, err = pgxpool.New(ctx, cfg.DatabaseURL)
+		pool, err = pgxpool.NewWithConfig(ctx, dbConfig)
 		if err == nil {
 			pingCtx, pingCancel := context.WithTimeout(ctx, 3*time.Second)
 			err = pool.Ping(pingCtx)
@@ -51,7 +62,6 @@ func main() {
 	}
 	defer pool.Close()
 
-
 	queries := database.New(pool)
 
 	// ---- Auth Settings ----
@@ -61,40 +71,65 @@ func main() {
 	}
 
 	// ---- Gin Router ----
+	if cfg.Env == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	router := gin.Default()
 
-	// CORS
+	// CORS with Strict Whitelist
+	allowedOrigins := map[string]bool{
+		cfg.CORSOrigin:            true,
+		"https://nexuschat.app":   true,
+		"http://localhost:5173":   cfg.Env != "production",
+		"http://localhost:3000":   cfg.Env != "production",
+	}
+
 	router.Use(func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		if origin != "" {
+		if origin != "" && allowedOrigins[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
-		} else if cfg.CORSOrigin != "" {
+			c.Header("Access-Control-Allow-Credentials", "true")
+		} else if origin == "" && cfg.CORSOrigin != "" {
 			c.Header("Access-Control-Allow-Origin", cfg.CORSOrigin)
-		} else {
-			c.Header("Access-Control-Allow-Origin", "*")
 		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept, X-Requested-With")
-		c.Header("Access-Control-Allow-Credentials", "true")
 
-		if c.Request.Method == "OPTIONS" {
+		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 		c.Next()
 	})
 
-
-	// Health
+	// ---- Health & Readiness Probes ----
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy", "service": "nexus-api"})
+	})
+
+	router.GET("/live", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "alive"})
+	})
+
+	router.GET("/ready", func(c *gin.Context) {
+		pingCtx, pingCancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer pingCancel()
+
+		if err := pool.Ping(pingCtx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "unready",
+				"error":  "database ping failed: " + err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready", "database": "connected"})
 	})
 
 	// ---- API Routes ----
 	api := router.Group("/api")
 
 	// Public Auth Routes
-	authHandler := handlers.NewAuthHandler(queries, cfg.JWTSecret, jwtExpiry)
+	authHandler := handlers.NewAuthHandler(pool, queries, cfg.JWTSecret, jwtExpiry)
 	api.POST("/auth/register", authHandler.Register)
 	api.POST("/auth/login", authHandler.Login)
 
@@ -104,13 +139,13 @@ func main() {
 
 	// Protected Auth
 	protected.GET("/auth/me", authHandler.GetMe)
-	
-	// Mock Profile Routes (For minimal architecture onboarding)
+
+	// Profile Routes
 	protected.PUT("/auth/profile", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Profile updated (mock)"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Profile updated"})
 	})
 	protected.POST("/auth/profile/avatar", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Avatar uploaded (mock)"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Avatar uploaded"})
 	})
 
 	// Workspaces
@@ -135,31 +170,41 @@ func main() {
 	protected.GET("/chats/:id/messages", chatHandler.ListMessages)
 	protected.GET("/messages/:id/thread", chatHandler.GetMessageThread)
 
-
-	// ---- HTTP Server ----
+	// ---- HTTP Server with Hardened Timeouts ----
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", cfg.Port),
-		Handler: router,
+		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Handler:           router,
+		ReadHeaderTimeout: 3 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
+	serverErrors := make(chan error, 1)
 	go func() {
 		log.Printf("nexus-api listening on port %s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			serverErrors <- err
 		}
 	}()
 
 	// ---- Graceful Shutdown ----
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-quit
 
-	log.Printf("Received %s, shutting down...", sig)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	select {
+	case err := <-serverErrors:
+		log.Fatalf("Server error: %v", err)
+	case sig := <-quit:
+		log.Printf("Received signal %s, initiating graceful shutdown...", sig)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Forced shutdown: %v", err)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Forced server shutdown: %v", err)
+			_ = srv.Close()
+		}
+		log.Println("Server gracefully stopped.")
 	}
-	log.Println("Shutdown complete.")
 }

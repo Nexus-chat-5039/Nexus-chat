@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
 	"nexus/services/nexus-api/internal/database"
 	"nexus/services/nexus-api/internal/middleware"
@@ -40,7 +43,6 @@ func TestJWTGenerationAndValidation(t *testing.T) {
 	}
 
 	claims, err := middleware.VerifyJWT(token, secret)
-
 	if err != nil {
 		t.Fatalf("failed to validate JWT: %v", err)
 	}
@@ -75,5 +77,51 @@ func TestSanitizeUser(t *testing.T) {
 
 	if sanitized["email"] != "bob@example.com" {
 		t.Errorf("expected email bob@example.com, got %v", sanitized["email"])
+	}
+}
+
+func TestSafeContextUserIDExtraction(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Case 1: missing user_id
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	_, err := getUserIDFromContext(c)
+	if err == nil {
+		t.Errorf("expected error when user_id is missing from context")
+	}
+
+	// Case 2: invalid UUID format
+	c, _ = gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("user_id", "invalid-uuid-string")
+	_, err = getUserIDFromContext(c)
+	if err == nil {
+		t.Errorf("expected error for invalid UUID string")
+	}
+
+	// Case 3: valid UUID
+	c, _ = gin.CreateTestContext(httptest.NewRecorder())
+	validID := "018f3a2b-7c8d-4e5f-9a0b-1c2d3e4f5a6b"
+	c.Set("user_id", validID)
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		t.Fatalf("unexpected error parsing valid UUID: %v", err)
+	}
+	if formatUUID(uid) != validID {
+		t.Errorf("expected %s, got %s", validID, formatUUID(uid))
+	}
+}
+
+func TestParseUUIDParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "invalid-param"}}
+
+	_, ok := parseUUIDParam(c, "id")
+	if ok {
+		t.Errorf("expected parseUUIDParam to fail for invalid id")
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request, got %d", w.Code)
 	}
 }

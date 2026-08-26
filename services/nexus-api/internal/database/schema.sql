@@ -48,6 +48,8 @@ CREATE TABLE workspace_members (
     PRIMARY KEY (workspace_id, user_id)
 );
 
+CREATE INDEX idx_workspace_members_user_id ON workspace_members (user_id, workspace_id);
+
 -- Groups (with enterprise fields)
 CREATE TABLE groups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -77,6 +79,8 @@ CREATE TABLE group_members (
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (group_id, user_id)
 );
+
+CREATE INDEX idx_group_members_user_id ON group_members (user_id, group_id);
 
 -- Group Invites (per-invite tracking)
 CREATE TABLE group_invites (
@@ -116,14 +120,16 @@ CREATE TABLE chats (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX idx_chats_group_id_created ON chats (group_id, created_at ASC);
+
 -- Messages
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL,
-    workspace_id UUID NOT NULL,
-    group_id UUID NOT NULL,
-    chat_id UUID NOT NULL,
-    user_id UUID NOT NULL,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     role VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     reply_to JSONB,
@@ -137,6 +143,7 @@ CREATE TABLE messages (
 );
 
 CREATE INDEX idx_msg_room_time ON messages(tenant_id, group_id, chat_id, created_at DESC);
+CREATE INDEX idx_messages_chat_created_active ON messages(chat_id, created_at ASC) WHERE is_deleted = false;
 
 -- Message Reactions
 CREATE TABLE IF NOT EXISTS message_reactions (
@@ -165,5 +172,6 @@ CREATE TABLE IF NOT EXISTS thread_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_thread_parent_id ON thread_messages(parent_message_id);
+CREATE INDEX IF NOT EXISTS idx_thread_messages_parent_created ON thread_messages(parent_message_id, created_at ASC);
+
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -13,11 +14,49 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
 	"nexus/services/nexus-api/internal/database"
 	"nexus/services/nexus-api/internal/middleware"
 )
+
+// ────────────────────────────────────────────────────────────────
+// Helper Functions: Safe Context & UUID Parsing
+// ────────────────────────────────────────────────────────────────
+
+// getUserIDFromContext safely extracts and validates the authenticated user ID.
+func getUserIDFromContext(c *gin.Context) (pgtype.UUID, error) {
+	val, exists := c.Get("user_id")
+	if !exists {
+		return pgtype.UUID{}, errors.New("user_id not found in context")
+	}
+	strVal, ok := val.(string)
+	if !ok || strVal == "" {
+		return pgtype.UUID{}, errors.New("invalid user_id in context")
+	}
+	return parseUUID(strVal)
+}
+
+// parseUUID validates and converts a string into pgtype.UUID.
+func parseUUID(s string) (pgtype.UUID, error) {
+	var uid pgtype.UUID
+	if err := uid.Scan(strings.TrimSpace(s)); err != nil || !uid.Valid {
+		return pgtype.UUID{}, fmt.Errorf("invalid UUID format: %s", s)
+	}
+	return uid, nil
+}
+
+// parseUUIDParam extracts a URL param and returns a validated pgtype.UUID.
+func parseUUIDParam(c *gin.Context, paramName string) (pgtype.UUID, bool) {
+	raw := c.Param(paramName)
+	uid, err := parseUUID(raw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid UUID for parameter '%s'", paramName)})
+		return pgtype.UUID{}, false
+	}
+	return uid, true
+}
 
 // ────────────────────────────────────────────────────────────────
 // Invite Code Generator (Crockford Base32, NX7K-Q2R9 format)
@@ -34,7 +73,6 @@ func generateInviteCode() (string, error) {
 		}
 		code[i] = crockfordAlphabet[n.Int64()]
 	}
-	// Format as XXXX-XXXX
 	return string(code[:4]) + "-" + string(code[4:]), nil
 }
 
@@ -43,16 +81,22 @@ func generateInviteCode() (string, error) {
 // ────────────────────────────────────────────────────────────────
 
 type AuthHandler struct {
+	pool      *pgxpool.Pool
 	db        *database.Queries
 	jwtSecret string
 	jwtExpiry time.Duration
 }
 
-func NewAuthHandler(db *database.Queries, jwtSecret string, jwtExpiry time.Duration) *AuthHandler {
-	return &AuthHandler{db: db, jwtSecret: jwtSecret, jwtExpiry: jwtExpiry}
+func NewAuthHandler(pool *pgxpool.Pool, db *database.Queries, jwtSecret string, jwtExpiry time.Duration) *AuthHandler {
+	return &AuthHandler{
+		pool:      pool,
+		db:        db,
+		jwtSecret: jwtSecret,
+		jwtExpiry: jwtExpiry,
+	}
 }
 
-// POST /api/auth/register — Create a new user account
+// POST /api/auth/register — Create a new user account with atomic workspace provisioning
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email"`
@@ -64,8 +108,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	// Hash password (cost 10 for optimal security & CPU efficiency)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
@@ -76,8 +120,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		displayName = req.Email
 	}
 
-	// Create user in DB
-	user, err := h.db.CreateUser(c.Request.Context(), database.CreateUserParams{
+	// Begin atomic database transaction for registration and onboarding
+	tx, err := h.pool.Begin(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+
+	qtx := h.db.WithTx(tx)
+
+	// 1. Create user in DB
+	user, err := qtx.CreateUser(c.Request.Context(), database.CreateUserParams{
 		Email:        req.Email,
 		PasswordHash: string(hash),
 		DisplayName:  displayName,
@@ -87,57 +141,93 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Create default tenant and workspace
-	tenant, err := h.db.CreateTenant(c.Request.Context(), database.CreateTenantParams{
+	// 2. Create tenant organization
+	tenant, err := qtx.CreateTenant(c.Request.Context(), database.CreateTenantParams{
 		Name: displayName + "'s Organization",
 		Plan: "free",
 	})
-	if err == nil {
-		ws, err := h.db.CreateWorkspace(c.Request.Context(), database.CreateWorkspaceParams{
-			TenantID: tenant.ID,
-			Name:     displayName + "'s Workspace",
-			Slug:     strings.ToLower(strings.ReplaceAll(displayName, " ", "-")) + "-workspace",
-		})
-		if err == nil {
-			h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
-				WorkspaceID: ws.ID,
-				UserID:      user.ID,
-				Role:        "owner",
-			})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create organization"})
+		return
+	}
 
-			code, _ := generateInviteCode()
-			var inviteCodePg pgtype.Text
-			inviteCodePg.Scan(code)
-			grp, err := h.db.CreateGroup(c.Request.Context(), database.CreateGroupParams{
-				TenantID:    tenant.ID,
-				WorkspaceID: ws.ID,
-				Name:        "General",
-				OwnerID:     user.ID,
-				AiEnabled:   true,
-				InviteCode:  inviteCodePg,
-				Visibility:  "private",
-				JoinPolicy:  "invite_only",
-			})
-			if err == nil {
-				h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
-					GroupID: grp.ID,
-					UserID:  user.ID,
-					Role:    "owner",
-				})
-				h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
-					TenantID:    tenant.ID,
-					WorkspaceID: ws.ID,
-					GroupID:     grp.ID,
-					Title:       "general",
-				})
-			}
-		}
+	// 3. Create collision-resistant workspace slug
+	code, err := generateInviteCode()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate unique identifier"})
+		return
+	}
+	suffix := strings.ToLower(strings.ReplaceAll(code, "-", "")[:4])
+	slugBase := strings.ToLower(strings.ReplaceAll(displayName, " ", "-"))
+	wsSlug := fmt.Sprintf("%s-%s-workspace", slugBase, suffix)
 
+	ws, err := qtx.CreateWorkspace(c.Request.Context(), database.CreateWorkspaceParams{
+		TenantID: tenant.ID,
+		Name:     displayName + "'s Workspace",
+		Slug:     wsSlug,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create workspace"})
+		return
+	}
+
+	// 4. Add creator as workspace owner
+	if err := qtx.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
+		WorkspaceID: ws.ID,
+		UserID:      user.ID,
+		Role:        "owner",
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to assign workspace owner"})
+		return
+	}
+
+	// 5. Create default General group
+	var inviteCodePg pgtype.Text
+	_ = inviteCodePg.Scan(code)
+	grp, err := qtx.CreateGroup(c.Request.Context(), database.CreateGroupParams{
+		TenantID:    tenant.ID,
+		WorkspaceID: ws.ID,
+		Name:        "General",
+		OwnerID:     user.ID,
+		AiEnabled:   true,
+		InviteCode:  inviteCodePg,
+		Visibility:  "private",
+		JoinPolicy:  "invite_only",
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create default group"})
+		return
+	}
+
+	// 6. Add creator as group owner
+	if err := qtx.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+		GroupID: grp.ID,
+		UserID:  user.ID,
+		Role:    "owner",
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to assign group owner"})
+		return
+	}
+
+	// 7. Create default General chat
+	if _, err := qtx.CreateChat(c.Request.Context(), database.CreateChatParams{
+		TenantID:    tenant.ID,
+		WorkspaceID: ws.ID,
+		GroupID:     grp.ID,
+		Title:       "general",
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create default chat"})
+		return
+	}
+
+	// Commit transaction
+	if err := tx.Commit(c.Request.Context()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to complete registration"})
+		return
 	}
 
 	// Generate JWT
 	userID := formatUUID(user.ID)
-
 	token, err := middleware.GenerateJWT(userID, user.Email, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -175,11 +265,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Update last seen
-	h.db.UpdateLastSeen(c.Request.Context(), user.ID)
+	_ = h.db.UpdateLastSeen(c.Request.Context(), user.ID)
 
 	// Generate JWT
 	userID := formatUUID(user.ID)
-
 	token, err := middleware.GenerateJWT(userID, user.Email, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -194,10 +283,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 // GET /api/auth/me — Get current user profile
 func (h *AuthHandler) GetMe(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
 	user, err := h.db.GetUserByID(c.Request.Context(), uid)
 	if err != nil {
@@ -233,15 +323,21 @@ func formatUUID(id pgtype.UUID) string {
 // ────────────────────────────────────────────────────────────────
 
 type WorkspaceHandler struct {
-	db *database.Queries
+	db database.Querier
 }
 
-func NewWorkspaceHandler(db *database.Queries) *WorkspaceHandler {
+func NewWorkspaceHandler(db database.Querier) *WorkspaceHandler {
 	return &WorkspaceHandler{db: db}
 }
 
 // POST /api/workspaces
 func (h *WorkspaceHandler) Create(c *gin.Context) {
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	var req struct {
 		TenantID string `json:"tenant_id" binding:"required"`
 		Name     string `json:"name" binding:"required"`
@@ -252,8 +348,11 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var tenantID pgtype.UUID
-	tenantID.Scan(req.TenantID)
+	tenantID, err := parseUUID(req.TenantID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id"})
+		return
+	}
 
 	ws, err := h.db.CreateWorkspace(c.Request.Context(), database.CreateWorkspaceParams{
 		TenantID: tenantID,
@@ -266,11 +365,7 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 	}
 
 	// Add creator as owner
-	userID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
-
-	h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
+	_ = h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
 		WorkspaceID: ws.ID,
 		UserID:      uid,
 		Role:        "owner",
@@ -281,18 +376,23 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 
 // GET /api/workspaces
 func (h *WorkspaceHandler) List(c *gin.Context) {
-	tenantID := c.Query("tenant_id")
-	if tenantID == "" {
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantIDStr := c.Query("tenant_id")
+	if tenantIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id query param required"})
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
-
-	var tid pgtype.UUID
-	tid.Scan(tenantID)
+	tid, err := parseUUID(tenantIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id"})
+		return
+	}
 
 	workspaces, err := h.db.ListWorkspacesByTenant(c.Request.Context(), database.ListWorkspacesByTenantParams{
 		TenantID: tid,
@@ -308,8 +408,26 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 
 // GET /api/workspaces/:id
 func (h *WorkspaceHandler) Get(c *gin.Context) {
-	var wsID pgtype.UUID
-	wsID.Scan(c.Param("id"))
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	wsID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	// Authorization check: caller must be a member
+	_, err = h.db.GetWorkspaceMember(c.Request.Context(), database.GetWorkspaceMemberParams{
+		WorkspaceID: wsID,
+		UserID:      uid,
+	})
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied to this workspace"})
+		return
+	}
 
 	ws, err := h.db.GetWorkspaceByID(c.Request.Context(), wsID)
 	if err != nil {
@@ -322,8 +440,26 @@ func (h *WorkspaceHandler) Get(c *gin.Context) {
 
 // GET /api/workspaces/:id/members
 func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
-	var wsID pgtype.UUID
-	wsID.Scan(c.Param("id"))
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	wsID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	// Authorization check: caller must be a member
+	_, err = h.db.GetWorkspaceMember(c.Request.Context(), database.GetWorkspaceMemberParams{
+		WorkspaceID: wsID,
+		UserID:      uid,
+	})
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied to workspace members"})
+		return
+	}
 
 	members, err := h.db.ListWorkspaceMembers(c.Request.Context(), wsID)
 	if err != nil {
@@ -336,6 +472,27 @@ func (h *WorkspaceHandler) ListMembers(c *gin.Context) {
 
 // POST /api/workspaces/:id/members
 func (h *WorkspaceHandler) AddMember(c *gin.Context) {
+	callerUID, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	wsID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	// Authorization check: caller must be owner or admin
+	callerMember, err := h.db.GetWorkspaceMember(c.Request.Context(), database.GetWorkspaceMemberParams{
+		WorkspaceID: wsID,
+		UserID:      callerUID,
+	})
+	if err != nil || (callerMember.Role != "owner" && callerMember.Role != "admin") {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only workspace owners or admins can add members"})
+		return
+	}
+
 	var req struct {
 		UserID string `json:"user_id" binding:"required"`
 		Role   string `json:"role" binding:"required"`
@@ -345,13 +502,15 @@ func (h *WorkspaceHandler) AddMember(c *gin.Context) {
 		return
 	}
 
-	var wsID, userID pgtype.UUID
-	wsID.Scan(c.Param("id"))
-	userID.Scan(req.UserID)
+	targetUID, err := parseUUID(req.UserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+		return
+	}
 
-	err := h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
+	err = h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
 		WorkspaceID: wsID,
-		UserID:      userID,
+		UserID:      targetUID,
 		Role:        req.Role,
 	})
 	if err != nil {
@@ -367,15 +526,21 @@ func (h *WorkspaceHandler) AddMember(c *gin.Context) {
 // ────────────────────────────────────────────────────────────────
 
 type GroupHandler struct {
-	db *database.Queries
+	db database.Querier
 }
 
-func NewGroupHandler(db *database.Queries) *GroupHandler {
+func NewGroupHandler(db database.Querier) *GroupHandler {
 	return &GroupHandler{db: db}
 }
 
 // POST /api/groups — Create a new group with invite code
 func (h *GroupHandler) Create(c *gin.Context) {
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	var req struct {
 		TenantID    string `json:"tenant_id"`
 		WorkspaceID string `json:"workspace_id"`
@@ -387,15 +552,15 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
-
 	var tenantID, wsID pgtype.UUID
-	
 	if req.TenantID != "" && req.WorkspaceID != "" {
-		tenantID.Scan(req.TenantID)
-		wsID.Scan(req.WorkspaceID)
+		var tErr, wErr error
+		tenantID, tErr = parseUUID(req.TenantID)
+		wsID, wErr = parseUUID(req.WorkspaceID)
+		if tErr != nil || wErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id or workspace_id"})
+			return
+		}
 	} else {
 		// Fallback to the user's first available workspace
 		workspaces, err := h.db.ListWorkspacesByUser(c.Request.Context(), uid)
@@ -407,23 +572,15 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		wsID = workspaces[0].ID
 	}
 
-	// Generate unique invite code with retry
-	var inviteCode string
-	for i := 0; i < 5; i++ {
-		code, err := generateInviteCode()
-		if err != nil {
-			continue
-		}
-		inviteCode = code
-		break
-	}
-	if inviteCode == "" {
+	// Generate unique invite code
+	inviteCode, err := generateInviteCode()
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate invite code"})
 		return
 	}
 
 	var inviteCodePg pgtype.Text
-	inviteCodePg.Scan(inviteCode)
+	_ = inviteCodePg.Scan(inviteCode)
 
 	group, err := h.db.CreateGroup(c.Request.Context(), database.CreateGroupParams{
 		TenantID:    tenantID,
@@ -441,7 +598,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	}
 
 	// Add creator as owner in group_members
-	h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+	_ = h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
 		GroupID: group.ID,
 		UserID:  uid,
 		Role:    "owner",
@@ -460,7 +617,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	}
 
 	// Audit log
-	h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
+	_ = h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
 		GroupID: group.ID,
 		ActorID: uid,
 		Action:  "group.created",
@@ -470,7 +627,6 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		}),
 	})
 
-	// Fetch members for response
 	members, _ := h.db.ListGroupMembers(c.Request.Context(), group.ID)
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -480,9 +636,11 @@ func (h *GroupHandler) Create(c *gin.Context) {
 
 // GET /api/groups — List groups the authenticated user belongs to
 func (h *GroupHandler) List(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
 	groups, err := h.db.ListGroupsByUser(c.Request.Context(), uid)
 	if err != nil {
@@ -490,14 +648,14 @@ func (h *GroupHandler) List(c *gin.Context) {
 		return
 	}
 
-	// Auto-provision a default group and chat if user has none in their workspace
+	// Auto-provision default group if empty
 	if len(groups) == 0 {
 		workspaces, err := h.db.ListWorkspacesByUser(c.Request.Context(), uid)
 		if err == nil && len(workspaces) > 0 {
 			ws := workspaces[0]
 			code, _ := generateInviteCode()
 			var inviteCodePg pgtype.Text
-			inviteCodePg.Scan(code)
+			_ = inviteCodePg.Scan(code)
 
 			newGrp, err := h.db.CreateGroup(c.Request.Context(), database.CreateGroupParams{
 				TenantID:    ws.TenantID,
@@ -510,12 +668,12 @@ func (h *GroupHandler) List(c *gin.Context) {
 				JoinPolicy:  "invite_only",
 			})
 			if err == nil {
-				h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+				_ = h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
 					GroupID: newGrp.ID,
 					UserID:  uid,
 					Role:    "owner",
 				})
-				h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
+				_, _ = h.db.CreateChat(c.Request.Context(), database.CreateChatParams{
 					TenantID:    ws.TenantID,
 					WorkspaceID: ws.ID,
 					GroupID:     newGrp.ID,
@@ -526,14 +684,16 @@ func (h *GroupHandler) List(c *gin.Context) {
 		}
 	}
 
-
 	var result []gin.H
 	for _, g := range groups {
 		chats, err := h.db.ListChatsByGroup(c.Request.Context(), g.ID)
 		if err != nil {
 			chats = []database.Chat{}
 		}
-		members, _ := h.db.ListGroupMembers(c.Request.Context(), g.ID)
+		members, err := h.db.ListGroupMembers(c.Request.Context(), g.ID)
+		if err != nil {
+			members = []database.ListGroupMembersRow{}
+		}
 		result = append(result, serializeGroup(g, chats, members))
 	}
 
@@ -542,6 +702,12 @@ func (h *GroupHandler) List(c *gin.Context) {
 
 // POST /api/groups/join — Join a group via invite code
 func (h *GroupHandler) Join(c *gin.Context) {
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	var req struct {
 		Code string `json:"code" binding:"required"`
 	}
@@ -550,16 +716,9 @@ func (h *GroupHandler) Join(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
-
-	// Normalize: uppercase and trim
 	code := strings.ToUpper(strings.TrimSpace(req.Code))
-
-	// Look up group by invite_code on the groups table
 	var inviteCodePg pgtype.Text
-	inviteCodePg.Scan(code)
+	_ = inviteCodePg.Scan(code)
 
 	group, err := h.db.GetGroupByInviteCode(c.Request.Context(), inviteCodePg)
 	if err != nil {
@@ -573,7 +732,6 @@ func (h *GroupHandler) Join(c *gin.Context) {
 		UserID:  uid,
 	})
 	if err == nil {
-		// Already a member, just return the group
 		chats, _ := h.db.ListChatsByGroup(c.Request.Context(), group.ID)
 		members, _ := h.db.ListGroupMembers(c.Request.Context(), group.ID)
 		c.JSON(http.StatusOK, gin.H{"group": serializeGroup(group, chats, members)})
@@ -581,21 +739,18 @@ func (h *GroupHandler) Join(c *gin.Context) {
 	}
 
 	// Add as member
-	h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
+	_ = h.db.AddGroupMember(c.Request.Context(), database.AddGroupMemberParams{
 		GroupID: group.ID,
 		UserID:  uid,
 		Role:    "member",
 	})
-
-	// Also add to workspace_members so message send works
-	h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
+	_ = h.db.AddWorkspaceMember(c.Request.Context(), database.AddWorkspaceMemberParams{
 		WorkspaceID: group.WorkspaceID,
 		UserID:      uid,
 		Role:        "member",
 	})
 
-	// Audit log
-	h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
+	_ = h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
 		GroupID: group.ID,
 		ActorID: uid,
 		Action:  "member.joined",
@@ -607,20 +762,22 @@ func (h *GroupHandler) Join(c *gin.Context) {
 
 	chats, _ := h.db.ListChatsByGroup(c.Request.Context(), group.ID)
 	members, _ := h.db.ListGroupMembers(c.Request.Context(), group.ID)
-
 	c.JSON(http.StatusOK, gin.H{"group": serializeGroup(group, chats, members)})
 }
 
 // DELETE /api/groups/:id — Soft delete a group
 func (h *GroupHandler) Delete(c *gin.Context) {
-	var groupID pgtype.UUID
-	groupID.Scan(c.Param("id"))
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	userID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(userID.(string))
+	groupID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
 
-	// Verify ownership
 	group, err := h.db.GetGroupByID(c.Request.Context(), groupID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
@@ -633,7 +790,7 @@ func (h *GroupHandler) Delete(c *gin.Context) {
 	}
 
 	var reason pgtype.Text
-	reason.Scan("deleted by owner")
+	_ = reason.Scan("deleted by owner")
 
 	err = h.db.SoftDeleteGroup(c.Request.Context(), database.SoftDeleteGroupParams{
 		ID:             groupID,
@@ -644,8 +801,7 @@ func (h *GroupHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Audit log
-	h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
+	_ = h.db.InsertAuditLog(c.Request.Context(), database.InsertAuditLogParams{
 		GroupID:  groupID,
 		ActorID:  uid,
 		Action:   "group.deleted",
@@ -660,33 +816,49 @@ func (h *GroupHandler) Delete(c *gin.Context) {
 // ────────────────────────────────────────────────────────────────
 
 type ChatHandler struct {
-	db *database.Queries
+	db database.Querier
 }
 
-func NewChatHandler(db *database.Queries) *ChatHandler {
+func NewChatHandler(db database.Querier) *ChatHandler {
 	return &ChatHandler{db: db}
 }
 
 // POST /api/chats
 func (h *ChatHandler) Create(c *gin.Context) {
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	var req struct {
-		TenantID    string `json:"tenant_id"`
-		WorkspaceID string `json:"workspace_id"`
-		GroupID     string `json:"group_id" binding:"required"`
-		Title       string `json:"title" binding:"required"`
+		GroupID string `json:"group_id" binding:"required"`
+		Title   string `json:"title" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var groupID pgtype.UUID
-	groupID.Scan(req.GroupID)
+	groupID, err := parseUUID(req.GroupID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group_id"})
+		return
+	}
 
-	// Get the group to inherit tenant/workspace
 	group, err := h.db.GetGroupByID(c.Request.Context(), groupID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
+		return
+	}
+
+	// Verify membership
+	_, err = h.db.GetGroupMember(c.Request.Context(), database.GetGroupMemberParams{
+		GroupID: group.ID,
+		UserID:  uid,
+	})
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "must be a group member to create a chat"})
 		return
 	}
 
@@ -706,14 +878,33 @@ func (h *ChatHandler) Create(c *gin.Context) {
 
 // GET /api/chats
 func (h *ChatHandler) List(c *gin.Context) {
-	groupID := c.Query("group_id")
-	if groupID == "" {
+	uid, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	groupIDStr := c.Query("group_id")
+	if groupIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "group_id query param required"})
 		return
 	}
 
-	var gid pgtype.UUID
-	gid.Scan(groupID)
+	gid, err := parseUUID(groupIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group_id"})
+		return
+	}
+
+	// Check group membership
+	_, err = h.db.GetGroupMember(c.Request.Context(), database.GetGroupMemberParams{
+		GroupID: gid,
+		UserID:  uid,
+	})
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied to this group's chats"})
+		return
+	}
 
 	chats, err := h.db.ListChatsByGroup(c.Request.Context(), gid)
 	if err != nil {
@@ -726,9 +917,14 @@ func (h *ChatHandler) List(c *gin.Context) {
 
 // GET /api/chats/:id/messages
 func (h *ChatHandler) ListMessages(c *gin.Context) {
-	var chatID pgtype.UUID
-	if err := chatID.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid chat id"})
+	_, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	chatID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 
@@ -818,9 +1014,14 @@ func (h *ChatHandler) ListMessages(c *gin.Context) {
 
 // GET /api/messages/:id/thread
 func (h *ChatHandler) GetMessageThread(c *gin.Context) {
-	var messageID pgtype.UUID
-	if err := messageID.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid message id"})
+	_, err := getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	messageID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 
@@ -856,14 +1057,12 @@ func (h *ChatHandler) GetMessageThread(c *gin.Context) {
 	})
 }
 
-
 // ────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────
 
 // serializeGroup builds a consistent JSON response for a group
 func serializeGroup(g database.Group, chats []database.Chat, members []database.ListGroupMembersRow) gin.H {
-	// Build member list with emails
 	memberEmails := make([]string, len(members))
 	for i, m := range members {
 		memberEmails[i] = m.Email
@@ -890,7 +1089,7 @@ func serializeGroup(g database.Group, chats []database.Chat, members []database.
 	}
 }
 
-// mustJSON marshals a value to JSON bytes, panicking on error (safe for known types).
+// mustJSON marshals a value to JSON bytes, returning empty JSON object on error.
 func mustJSON(v interface{}) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
