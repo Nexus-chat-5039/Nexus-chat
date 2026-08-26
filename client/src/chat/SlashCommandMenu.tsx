@@ -93,17 +93,10 @@ const SlashCommandMenu = React.memo(({ filter, activeIndex, onSelect, visible }:
   if (!visible || filteredCommands.length === 0) return null;
 
   return (
-    <>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-      <div 
-        className="absolute bottom-full left-0 mb-2 w-72 rounded-xl bg-nexus-card/95 backdrop-blur-xl border border-nexus-border/50 shadow-2xl z-50 overflow-hidden"
-        style={{ animation: 'slideUp 0.2s ease-out' }}
-      >
+    <div 
+      className="absolute bottom-full left-0 mb-2 w-72 rounded-xl bg-nexus-card/95 backdrop-blur-xl border border-nexus-border/50 shadow-2xl z-50 overflow-hidden"
+      style={{ animation: 'slideUp 0.2s ease-out' }}
+    >
         <div className="text-[10px] uppercase tracking-wider text-nexus-muted/60 font-semibold px-3 pt-2 pb-1">
           Commands
         </div>
@@ -144,7 +137,6 @@ const SlashCommandMenu = React.memo(({ filter, activeIndex, onSelect, visible }:
           })}
         </div>
       </div>
-    </>
   );
 });
 

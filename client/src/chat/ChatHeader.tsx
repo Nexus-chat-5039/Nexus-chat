@@ -1,5 +1,6 @@
 import { memo } from "react"
-import { Menu, Info, Search, Users } from "lucide-react"
+import { Menu, Info, Search, Users, Sun, Moon } from "lucide-react"
+import { useThemeStore } from "../stores/themeStore"
 
 type Props = {
   title: string
@@ -18,15 +19,17 @@ const ChatHeader = memo(function ChatHeader({
   onOpenDetails,
   onOpenCommandPalette,
 }: Props) {
+  const { resolvedTheme, toggleTheme } = useThemeStore()
+
   return (
-    <div className="flex items-center justify-between border-b border-nexus-border/30 bg-nexus-bg/70 backdrop-blur-xl px-4 md:px-5 h-14 shrink-0 z-10">
+    <div className="flex items-center justify-between border-b border-nexus-border bg-nexus-header backdrop-blur-xl px-4 md:px-5 h-14 shrink-0 z-10 transition-colors duration-200">
       {/* Left */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           type="button"
           onClick={onToggleSidebar}
           aria-label="Toggle navigation sidebar"
-          className="p-2 -ml-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200 md:hidden"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 -ml-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200 md:hidden"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -43,15 +46,30 @@ const ChatHeader = memo(function ChatHeader({
 
       {/* Right */}
       <div className="flex items-center gap-1">
+        {/* Quick Theme Toggle */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={`Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200"
+          title={`Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`}
+        >
+          {resolvedTheme === "dark" ? (
+            <Sun className="w-[18px] h-[18px] hover:text-amber-400 transition-colors" />
+          ) : (
+            <Moon className="w-[18px] h-[18px] hover:text-indigo-600 transition-colors" />
+          )}
+        </button>
+
         <button
           type="button"
           onClick={onOpenCommandPalette}
           aria-label="Search channels, workspaces, or actions"
-          className="p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200 flex items-center gap-1.5"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200 gap-1.5"
           title="Search (⌘K)"
         >
           <Search className="w-[18px] h-[18px]" />
-          <kbd className="hidden lg:inline-flex text-[9px] bg-nexus-surface/80 px-1.5 py-0.5 rounded text-nexus-muted/50 border border-nexus-border/30 font-mono">
+          <kbd className="hidden lg:inline-flex text-[9px] bg-nexus-surface/80 px-1.5 py-0.5 rounded text-nexus-muted/70 border border-nexus-border/50 font-mono">
             ⌘K
           </kbd>
         </button>
@@ -59,7 +77,7 @@ const ChatHeader = memo(function ChatHeader({
           type="button"
           onClick={onOpenDetails}
           aria-label="View workspace members and details"
-          className="p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200"
           title="Members"
         >
           <Users className="w-[18px] h-[18px]" />
@@ -68,7 +86,7 @@ const ChatHeader = memo(function ChatHeader({
           type="button"
           onClick={onToggleInfo}
           aria-label="Toggle conversation details panel"
-          className="p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200 hidden md:block"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 text-nexus-muted hover:text-nexus-text hover:bg-nexus-surface rounded-xl transition-all duration-200 hidden md:flex"
           title="Info"
         >
           <Info className="w-[18px] h-[18px]" />

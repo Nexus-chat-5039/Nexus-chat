@@ -87,6 +87,25 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [activeGroup, activeChatId]
   )
 
+  const prevTokenRef = useRef(token)
+
+  // Reset state on logout
+  useEffect(() => {
+    if (prevTokenRef.current && !token) {
+      setTimeout(() => {
+        setGroups([])
+        setActiveGroupIdState("")
+        setActiveChatIdState("")
+        setProfileImage(null)
+        setError(null)
+        setIsLoading(false)
+        localStorage.removeItem("nexus_active_group_id")
+        localStorage.removeItem("nexus_active_chat_id")
+      }, 0)
+    }
+    prevTokenRef.current = token
+  }, [token])
+
   // Fetch profile image
   useEffect(() => {
     if (!token) return

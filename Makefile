@@ -39,6 +39,18 @@ test:
 	cd services/nexus-billing && go test ./...
 	@echo "Tests complete."
 
+# Run Load Tests (Usage: make test-load-api USERS=500 DURATION=20)
+test-load-api:
+	USERS=$(or $(USERS),100) DURATION=$(or $(DURATION),15) RAMP=$(or $(RAMP),3) node tests/load/api_load_test.js
+
+test-load-socket:
+	USERS=$(or $(USERS),100) DURATION=$(or $(DURATION),15) RAMP=$(or $(RAMP),3) node tests/load/socket_load_test.js
+
+# Run 10,000 Requests Stress Test
+test-10k:
+	REQUESTS=10000 CONCURRENCY=300 node tests/load/api_10k_test.js
+
+
 # Clean binaries
 clean:
 	rm -rf services/nexus-*/bin
@@ -46,3 +58,4 @@ clean:
 # Show logs
 logs:
 	docker compose logs -f
+

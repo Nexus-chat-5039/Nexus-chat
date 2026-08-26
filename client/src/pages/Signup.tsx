@@ -147,7 +147,7 @@ export default function Signup() {
               rightElement={
                 <button
                   onClick={() => setShowPassword(!showPassword)}
-                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5 flex items-center justify-center"
+                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-nexus-hover flex items-center justify-center"
                   type="button"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
@@ -189,7 +189,7 @@ export default function Signup() {
               rightElement={
                 <button
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5 flex items-center justify-center"
+                  className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-nexus-hover flex items-center justify-center"
                   type="button"
                   aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                 >

@@ -131,36 +131,36 @@ export default function AmbientBackground() {
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
       {/* Base */}
-      <div className="absolute inset-0 bg-[#0d0d0d]" />
+      <div className="absolute inset-0 bg-nexus-bg transition-colors duration-300" />
 
       {/* Particle Network Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-60 mix-blend-screen" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-25 dark:opacity-60 mix-blend-multiply dark:mix-blend-screen" />
 
       {/* Orb 1 - Top-left, red tint */}
       <div
-        className="absolute w-[800px] h-[800px] rounded-full opacity-40"
+        className="absolute w-[800px] h-[800px] rounded-full opacity-5 dark:opacity-40 transition-opacity duration-300"
         style={{
           top: "-20%",
           left: "-10%",
-          background: "radial-gradient(circle, rgba(224,60,49,0.08) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(224,60,49,0.12) 0%, transparent 70%)",
           animation: "orbFloat1 22s ease-in-out infinite",
         }}
       />
 
       {/* Orb 2 - Center-right, subtle warmth */}
       <div
-        className="absolute w-[600px] h-[600px] rounded-full opacity-30"
+        className="absolute w-[600px] h-[600px] rounded-full opacity-5 dark:opacity-30 transition-opacity duration-300"
         style={{
           top: "40%",
           right: "-10%",
-          background: "radial-gradient(circle, rgba(200,60,40,0.06) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(200,60,40,0.1) 0%, transparent 70%)",
           animation: "orbFloat2 18s ease-in-out infinite",
         }}
       />
 
       {/* Noise texture overlay */}
       <div
-        className="absolute inset-0 opacity-[0.02]"
+        className="absolute inset-0 opacity-[0.01] dark:opacity-[0.02]"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
           backgroundRepeat: "repeat",
@@ -168,19 +168,6 @@ export default function AmbientBackground() {
           mixBlendMode: "overlay"
         }}
       />
-
-      <style>{`
-        @keyframes orbFloat1 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(40px, 30px) scale(1.05); }
-          66% { transform: translate(-20px, 50px) scale(0.95); }
-        }
-        @keyframes orbFloat2 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(-30px, -40px) scale(1.08); }
-          66% { transform: translate(20px, -20px) scale(0.92); }
-        }
-      `}</style>
     </div>
   )
 }

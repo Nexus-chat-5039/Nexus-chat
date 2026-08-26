@@ -64,8 +64,8 @@ export default function Profile() {
 
     try {
       if (!token) throw new Error("Not authenticated")
-      const data = await updateProfile(username, email, fullName, bio)
-      login(data.access_token, email || userEmail, username || currentUsername)
+      await updateProfile(username, email, fullName, bio)
+      login(token, email || userEmail, username || currentUsername)
       setSuccess("Profile updated")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update profile")

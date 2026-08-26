@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { Settings, Plus, ChevronDown, ChevronRight, Hash, LogOut, User } from "lucide-react"
+import { Settings, Plus, ChevronDown, ChevronRight, Hash, LogOut, User, Sun, Moon } from "lucide-react"
 import { useAuthStore } from "../stores/authStore"
+import { useThemeStore } from "../stores/themeStore"
 import Modal from "../components/Modal"
 import type { Group } from "../types"
 
@@ -34,6 +35,7 @@ export default function Sidebar({
 }: Props) {
   const navigate = useNavigate()
   const { logout } = useAuthStore()
+  const { resolvedTheme, toggleTheme } = useThemeStore()
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [modalType, setModalType] = useState<"group" | "chat" | "join" | null>(null)
   const [inputValue, setInputValue] = useState("")
@@ -53,9 +55,9 @@ export default function Sidebar({
   }, [inputValue, modalType, onNewGroup, onNewChat, onJoinGroup])
 
   return (
-    <div className="flex h-full w-[280px] md:w-[260px] flex-col border-r border-nexus-border/30 bg-nexus-sidebar/80 backdrop-blur-xl relative z-40">
+    <div className="flex h-full w-[280px] md:w-[260px] flex-col border-r border-nexus-border bg-nexus-sidebar backdrop-blur-xl relative z-40">
       {/* Header */}
-      <div className="h-14 flex items-center px-4 border-b border-nexus-border/30 shrink-0">
+      <div className="h-14 flex items-center px-4 border-b border-nexus-border shrink-0">
         <h2 className="text-sm font-bold tracking-tight text-nexus-text/90">Workspaces</h2>
       </div>
 
@@ -125,7 +127,7 @@ export default function Sidebar({
                       e.stopPropagation()
                       onDeleteGroup(group.id)
                     }}
-                    className="opacity-0 group-hover:opacity-100 text-red-400/70 hover:text-red-400 p-1 rounded transition-all"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-red-400/70 hover:text-red-400 p-1 rounded transition-all"
                     title="Delete"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -161,7 +163,7 @@ export default function Sidebar({
                             e.stopPropagation()
                             onDeleteChat(group.id, chat.id)
                           }}
-                          className="opacity-0 group-hover/chat:opacity-100 text-red-400/60 hover:text-red-400 p-0.5 rounded transition-all"
+                          className="opacity-0 group-hover/chat:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-red-400/60 hover:text-red-400 p-0.5 rounded transition-all"
                           title="Delete"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -242,22 +244,35 @@ export default function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 p-2.5 border-t border-nexus-border/30">
-        <div className="flex items-center gap-2">
+      <div className="shrink-0 p-2.5 border-t border-nexus-border">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             aria-label="Open settings"
             onClick={() => navigate("/settings")}
-            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-xs text-nexus-muted hover:bg-nexus-hover hover:text-nexus-text transition-all"
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-xs font-medium text-nexus-muted hover:bg-nexus-hover hover:text-nexus-text transition-all"
           >
             <Settings className="w-3.5 h-3.5" />
             Settings
           </button>
           <button
             type="button"
+            aria-label={`Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`}
+            onClick={toggleTheme}
+            className="p-2 rounded-lg text-nexus-muted hover:bg-nexus-hover hover:text-nexus-text transition-all"
+            title={`Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`}
+          >
+            {resolvedTheme === "dark" ? (
+              <Sun className="w-3.5 h-3.5 hover:text-amber-400 transition-colors" />
+            ) : (
+              <Moon className="w-3.5 h-3.5 hover:text-indigo-600 transition-colors" />
+            )}
+          </button>
+          <button
+            type="button"
             aria-label="Sign out of account"
             onClick={() => { logout(); navigate("/login") }}
-            className="flex items-center justify-center p-2 rounded-lg text-nexus-muted hover:bg-red-500/10 hover:text-red-400 transition-all"
+            className="flex items-center justify-center p-2 rounded-lg text-nexus-muted hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-all"
             title="Log out"
           >
             <LogOut className="w-3.5 h-3.5" />

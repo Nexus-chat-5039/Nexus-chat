@@ -1,22 +1,35 @@
-import { useState, useCallback } from "react"
+import { create } from "zustand"
 import type { Toast, ToastType } from "../components/ui/NexusToast"
 
-export function useToast() {
-  const [toasts, setToasts] = useState<Toast[]>([])
+interface ToastStore {
+  toasts: Toast[]
+  addToast: (message: string, type?: ToastType) => string
+  dismissToast: (id: string) => void
+  success: (message: string) => string
+  error: (message: string) => string
+  info: (message: string) => string
+}
 
-  const addToast = useCallback((message: string, type: ToastType = "info") => {
-    const id = crypto.randomUUID()
-    setToasts((prev) => [...prev, { id, message, type }])
+export const useToastStore = create<ToastStore>((set) => ({
+  toasts: [],
+  addToast: (message, type = "info") => {
+    const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2)
+    set((s) => ({ toasts: [...s.toasts, { id, message, type }] }))
     return id
-  }, [])
+  },
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  success: (msg) => useToastStore.getState().addToast(msg, "success"),
+  error: (msg) => useToastStore.getState().addToast(msg, "error"),
+  info: (msg) => useToastStore.getState().addToast(msg, "info"),
+}))
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
-  }, [])
-
-  const success = useCallback((message: string) => addToast(message, "success"), [addToast])
-  const error = useCallback((message: string) => addToast(message, "error"), [addToast])
-  const info = useCallback((message: string) => addToast(message, "info"), [addToast])
+export function useToast() {
+  const toasts = useToastStore((state) => state.toasts)
+  const addToast = useToastStore((state) => state.addToast)
+  const dismissToast = useToastStore((state) => state.dismissToast)
+  const success = useToastStore((state) => state.success)
+  const error = useToastStore((state) => state.error)
+  const info = useToastStore((state) => state.info)
 
   return { toasts, addToast, dismissToast, success, error, info }
 }

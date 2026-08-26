@@ -14,6 +14,7 @@
   <meta name="robots" content="index, follow" />
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#e03c31" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' ws: wss: http: https:;" />
   <link rel="canonical" href="https://nexus.chat" />
 
   <!-- Open Graph / Facebook -->
@@ -58,9 +59,26 @@
     }
   }
   </script>
+
+  <!-- Theme Initialization Script to prevent FOUC -->
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem("nexus_theme") || "dark";
+        var isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.classList.remove("light");
+        } else {
+          document.documentElement.classList.add("light");
+          document.documentElement.classList.remove("dark");
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 
-<body class="bg-[#0d0d0d] text-[#e0e0e0] antialiased selection:bg-[#e03c31]/30 selection:text-white">
+<body class="bg-nexus-bg text-nexus-text antialiased selection:bg-[#e03c31]/30 selection:text-white min-h-screen">
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

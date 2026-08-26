@@ -57,3 +57,16 @@ export const initAuth = async () => {
 
 // Start initialization immediately
 initAuth();
+
+// Cross-tab authentication synchronization
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "nexus_token") {
+      if (!e.newValue) {
+        useAuthStore.getState().logout();
+      } else {
+        initAuth();
+      }
+    }
+  });
+}

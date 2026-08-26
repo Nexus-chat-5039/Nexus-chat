@@ -1,22 +1,23 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
       colors: {
         nexus: {
-          bg: "#161A1D",
-          card: "#1E2228",
-          surface: "#232830",
-          text: "#EDEDED",
-          muted: "#9CA3AF",
-          border: "#2F343D",
-          primary: "#A4161A",
-          "primary-light": "#C41E22",
-          input: "#1E2228",
-          hover: "#262C34",
-          sidebar: "#1A1E24",
-          header: "#1A1E24",
+          bg: "rgb(var(--nexus-bg) / <alpha-value>)",
+          card: "rgb(var(--nexus-card) / <alpha-value>)",
+          surface: "rgb(var(--nexus-surface) / <alpha-value>)",
+          text: "rgb(var(--nexus-text) / <alpha-value>)",
+          muted: "rgb(var(--nexus-muted) / <alpha-value>)",
+          border: "rgb(var(--nexus-border) / <alpha-value>)",
+          primary: "rgb(var(--nexus-primary) / <alpha-value>)",
+          "primary-light": "rgb(var(--nexus-primary-light) / <alpha-value>)",
+          input: "rgb(var(--nexus-input) / <alpha-value>)",
+          hover: "rgb(var(--nexus-hover) / <alpha-value>)",
+          sidebar: "rgb(var(--nexus-sidebar) / <alpha-value>)",
+          header: "rgb(var(--nexus-header) / <alpha-value>)",
         },
       },
       animation: {

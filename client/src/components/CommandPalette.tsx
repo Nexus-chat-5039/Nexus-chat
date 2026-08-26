@@ -61,12 +61,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
-  // Focus input when opened
+  // Focus input when opened and restore focus when closed
   useEffect(() => {
     if (isOpen) {
+      previousActiveElement.current = document.activeElement as HTMLElement | null;
       const timer = setTimeout(() => inputRef.current?.focus(), 20);
       return () => clearTimeout(timer);
+    } else if (previousActiveElement.current) {
+      previousActiveElement.current.focus();
+      previousActiveElement.current = null;
     }
   }, [isOpen]);
 

@@ -37,7 +37,8 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
 
   const handleSend = useCallback(
     (triggerAi: boolean) => {
-      if (!text.trim() || disabled) return
+      if (!text.trim()) return
+      if (triggerAi && disabled) return
       onSend(text, triggerAi)
       setText("")
       setHelpVisible(false)
@@ -128,24 +129,24 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
   )
 
   return (
-    <div className="shrink-0 border-t border-nexus-border/20 bg-nexus-bg/80 backdrop-blur-2xl p-3 md:p-4 z-20">
+    <div className="shrink-0 border-t border-nexus-border bg-nexus-header/90 backdrop-blur-2xl p-3 md:p-4 z-20">
       {/* Help card */}
       {helpVisible && (
-        <div className="mb-3 rounded-xl bg-nexus-card/80 backdrop-blur-xl border border-nexus-border/40 p-4 animate-[slideDown_0.2s_ease-out]">
+        <div className="mb-3 rounded-xl bg-nexus-card backdrop-blur-xl border border-nexus-border p-4 shadow-md animate-[slideDown_0.2s_ease-out]">
           <div className="flex items-center justify-between mb-2.5">
             <h4 className="text-xs font-bold text-nexus-text/90 uppercase tracking-wider">Available Commands</h4>
             <button
               type="button"
               onClick={() => setHelpVisible(false)}
               aria-label="Close help"
-              className="p-1 hover:bg-white/5 rounded-full text-nexus-muted hover:text-nexus-text transition-colors"
+              className="p-1 hover:bg-nexus-hover rounded-full text-nexus-muted hover:text-nexus-text transition-colors"
             >
               <X size={14} />
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {getFilteredCommands("").filter((c) => c.action === "ai").map((cmd) => (
-              <div key={cmd.command} className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-nexus-surface/30">
+              <div key={cmd.command} className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-nexus-surface/50">
                 <span className="text-nexus-primary/70">{cmd.icon}</span>
                 <div>
                   <span className="text-xs font-mono font-semibold text-nexus-text/80">{cmd.command.startsWith("/") ? cmd.command : "/" + cmd.command}</span>
@@ -159,10 +160,10 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
 
       {/* Reply preview */}
       {replyingTo && (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-nexus-card/70 border border-nexus-primary/15 p-2 pl-3 relative overflow-hidden animate-[slideDown_0.2s_ease-out]">
-          <div className="w-0.5 absolute left-0 top-0 bottom-0 bg-nexus-primary/40 rounded-full" />
+        <div className="mb-2 flex items-center justify-between rounded-lg bg-nexus-card border border-nexus-primary/20 p-2 pl-3 relative overflow-hidden shadow-sm animate-[slideDown_0.2s_ease-out]">
+          <div className="w-0.5 absolute left-0 top-0 bottom-0 bg-nexus-primary/60 rounded-full" />
           <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold text-nexus-primary/80">
+            <span className="text-[10px] font-semibold text-nexus-primary">
               Replying to {replyingTo.sender_name || replyingTo.sender}
             </span>
             <span className="text-[11px] text-nexus-muted truncate">{replyingTo.content}</span>
@@ -171,7 +172,7 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
             type="button"
             onClick={onCancelReply}
             aria-label="Cancel reply"
-            className="ml-2 p-1 hover:bg-white/5 rounded-full text-nexus-muted hover:text-nexus-text transition-colors"
+            className="ml-2 min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-nexus-hover rounded-full text-nexus-muted hover:text-nexus-text transition-colors"
           >
             <X size={14} />
           </button>
@@ -191,20 +192,18 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
         <textarea
           ref={textareaRef}
           value={text}
-          disabled={disabled}
           rows={1}
           aria-label="Type a message"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={disabled ? "AI is thinking..." : "Type a message... (/ for commands)"}
+          placeholder="Type a message... (/ for commands)"
           className="
             flex-1 resize-none rounded-xl px-4 py-2.5 text-sm
-            bg-nexus-card/70 text-nexus-text
-            placeholder:text-nexus-muted/50
-            outline-none border border-nexus-border/40
-            focus:border-nexus-primary/40 focus:ring-[3px] focus:ring-nexus-primary/8
-            focus:bg-nexus-card
-            disabled:opacity-40
+            bg-nexus-card text-nexus-text
+            placeholder:text-nexus-muted/60
+            outline-none border border-nexus-border
+            focus:border-nexus-primary/50 focus:ring-[3px] focus:ring-nexus-primary/10
+            shadow-sm
             transition-all duration-200
             leading-5
           "
@@ -217,8 +216,8 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
           disabled={disabled || !text.trim()}
           aria-label="Ask AI assistant"
           className="
-            flex items-center gap-1.5 rounded-xl border border-nexus-primary/25
-            bg-nexus-primary/8 px-3 py-2.5
+            flex items-center justify-center gap-1.5 rounded-xl border border-nexus-primary/25
+            bg-nexus-primary/8 min-h-[44px] px-3 py-2.5
             text-xs font-medium text-nexus-primary/80
             hover:bg-nexus-primary/15 hover:border-nexus-primary/40
             active:scale-95 transition-all duration-150
@@ -234,10 +233,10 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
         <button
           type="button"
           onClick={() => handleSend(false)}
-          disabled={disabled || !text.trim()}
+          disabled={!text.trim()}
           aria-label="Send message"
           className="
-            rounded-xl bg-nexus-primary px-3.5 py-2.5
+            rounded-xl bg-nexus-primary min-h-[44px] min-w-[44px] flex items-center justify-center px-3.5 py-2.5
             text-white shadow-md shadow-nexus-primary/15
             hover:shadow-lg hover:shadow-nexus-primary/25 hover:brightness-110
             active:scale-[0.95] active:duration-100
@@ -249,13 +248,6 @@ export default function MessageInput({ onSend, disabled, replyingTo, onCancelRep
           <Send className="w-4 h-4" />
         </button>
       </div>
-
-      <style>{`
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-6px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   )
 }

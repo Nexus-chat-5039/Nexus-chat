@@ -97,7 +97,7 @@ export default function NexusToast({ toast, onDismiss }: NexusToastProps) {
           onClick={handleDismiss}
           type="button"
           aria-label="Dismiss notification"
-          className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-white/5"
+          className="text-nexus-muted hover:text-nexus-text transition-colors p-1 rounded-lg hover:bg-nexus-hover"
         >
           <X className="w-3.5 h-3.5" />
         </button>

@@ -47,8 +47,14 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { token } = useAuthStore()
+  const { token, isLoading } = useAuthStore()
   const { toasts, dismissToast } = useToast()
+
+  if (isLoading) {
+    return <LoadingFallback />
+  }
+
+  const isAuthenticated = Boolean(!isLoading && token)
 
   return (
     <>
@@ -65,7 +71,7 @@ export default function App() {
             path="/"
             element={
               <PageTransition>
-                {token ? <Navigate to="/chat" /> : <Landing />}
+                {isAuthenticated ? <Navigate to="/chat" /> : <Landing />}
               </PageTransition>
             }
           />
@@ -73,7 +79,7 @@ export default function App() {
             path="/login"
             element={
               <PageTransition>
-                {token ? <Navigate to="/chat" /> : <Login />}
+                {isAuthenticated ? <Navigate to="/chat" /> : <Login />}
               </PageTransition>
             }
           />
@@ -81,7 +87,7 @@ export default function App() {
             path="/signup"
             element={
               <PageTransition>
-                <Signup />
+                {isAuthenticated ? <Navigate to="/chat" /> : <Signup />}
               </PageTransition>
             }
           />
@@ -89,7 +95,7 @@ export default function App() {
             path="/onboarding"
             element={
               <PageTransition>
-                {token ? <Onboarding /> : <Navigate to="/" />}
+                {isAuthenticated ? <Onboarding /> : <Navigate to="/" />}
               </PageTransition>
             }
           />
@@ -97,7 +103,7 @@ export default function App() {
             path="/chat"
             element={
               <PageTransition>
-                {token ? <Chat /> : <Navigate to="/" />}
+                {isAuthenticated ? <Chat /> : <Navigate to="/" />}
               </PageTransition>
             }
           />
@@ -105,7 +111,7 @@ export default function App() {
             path="/profile"
             element={
               <PageTransition>
-                {token ? <Profile /> : <Navigate to="/" />}
+                {isAuthenticated ? <Profile /> : <Navigate to="/" />}
               </PageTransition>
             }
           />
@@ -113,7 +119,7 @@ export default function App() {
             path="/settings"
             element={
               <PageTransition>
-                {token ? <Settings /> : <Navigate to="/" />}
+                {isAuthenticated ? <Settings /> : <Navigate to="/" />}
               </PageTransition>
             }
           />

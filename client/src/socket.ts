@@ -9,14 +9,13 @@ export const socket = io(SOCKET_URL, {
   reconnection: true,
   reconnectionDelay: 1000,
   reconnectionAttempts: 5,
+  auth: (cb) => {
+    const token = typeof localStorage !== "undefined" ? localStorage.getItem("nexus_token") : null
+    cb({ token })
+  },
 })
 
-// Update auth token on connection
 socket.on("connect", () => {
-  const token = localStorage.getItem("nexus_token")
-  if (token) {
-    socket.auth = { token }
-  }
   console.log("Socket connected:", socket.id)
 })
 

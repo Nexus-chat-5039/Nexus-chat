@@ -42,10 +42,27 @@ const MessageList = memo(function MessageList({
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const prevMessagesCountRef = useRef(messages.length)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isTyping])
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 140
+
+    const isNewMessage = messages.length > prevMessagesCountRef.current
+    prevMessagesCountRef.current = messages.length
+
+    // Always scroll on new message if near bottom, or fast instant scroll during stream
+    if (isNearBottom || isNewMessage) {
+      if (streamingMessageId) {
+        bottomRef.current?.scrollIntoView({ behavior: "auto" })
+      } else {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+      }
+    }
+  }, [messages, isTyping, streamingMessageId])
 
   return (
     <div
@@ -58,12 +75,12 @@ const MessageList = memo(function MessageList({
       <div className="flex flex-col gap-0.5 min-h-0">
         {messages.length === 0 && !isTyping && (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-nexus-surface/60 flex items-center justify-center border border-nexus-border/30">
-              <MessageSquare className="w-7 h-7 text-nexus-muted/50" />
+            <div className="w-16 h-16 rounded-2xl bg-nexus-card flex items-center justify-center border border-nexus-border shadow-sm">
+              <MessageSquare className="w-7 h-7 text-nexus-primary" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-nexus-muted/60 mb-1">No messages yet</h3>
-              <p className="text-sm text-nexus-muted/40 max-w-[240px]">
+              <h3 className="text-base font-semibold text-nexus-text mb-1">No messages yet</h3>
+              <p className="text-xs text-nexus-muted max-w-[280px] leading-relaxed">
                 Start the conversation or ask the AI assistant anything...
               </p>
             </div>

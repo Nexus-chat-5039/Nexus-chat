@@ -10,6 +10,7 @@ import { useAuthStore } from "../stores/authStore"
 import { ErrorBoundary } from "../components/ErrorBoundary"
 import GroupDetailsModal from "../components/GroupDetailsModal"
 import CommandPalette from "../components/CommandPalette"
+import Modal from "../components/Modal"
 import type { Message } from "../types"
 
 export default function ChatLayout() {
@@ -24,6 +25,8 @@ export default function ChatLayout() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
   const [activeThread, setActiveThread] = useState<Message | null>(null)
+  const [paletteModal, setPaletteModal] = useState<"group" | "chat" | "join" | null>(null)
+  const [paletteInput, setPaletteInput] = useState("")
 
   useEffect(() => {
     const handleResize = () => {
@@ -47,6 +50,17 @@ export default function ChatLayout() {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+  // Lock body scroll when mobile thread drawer is open
+  useEffect(() => {
+    if (activeThread && window.innerWidth < 768) {
+      const original = document.body.style.overflow
+      document.body.style.overflow = "hidden"
+      return () => {
+        document.body.style.overflow = original
+      }
+    }
+  }, [activeThread])
 
   const handleMobileAction = useCallback(() => {
     if (window.innerWidth < 768) {
@@ -164,12 +178,28 @@ export default function ChatLayout() {
       if (action === "logout") {
         logout()
         navigate("/login")
+      } else if (action === "new-chat") {
+        setPaletteModal("chat")
+        setPaletteInput("")
+      } else if (action === "new-group") {
+        setPaletteModal("group")
+        setPaletteInput("")
+      } else if (action === "join-group") {
+        setPaletteModal("join")
+        setPaletteInput("")
       }
-      // new-chat, new-group, join-group are handled via sidebar modals
-      // For now we just close the palette
     },
     [logout, navigate]
   )
+
+  const handlePaletteSubmit = useCallback(() => {
+    if (!paletteInput.trim()) return
+    if (paletteModal === "group") createGroup(paletteInput)
+    else if (paletteModal === "chat") createChat(paletteInput)
+    else if (paletteModal === "join") joinGroup(paletteInput)
+    setPaletteModal(null)
+    setPaletteInput("")
+  }, [paletteInput, paletteModal, createGroup, createChat, joinGroup])
 
   const handleCommandPaletteNavigate = useCallback(
     (path: string) => {
@@ -284,7 +314,7 @@ export default function ChatLayout() {
         <aside
           aria-label={activeThreadMessage ? "Thread conversation" : "Conversation details"}
           className={`
-            hidden md:block border-l border-nexus-border/30 bg-nexus-sidebar/60 backdrop-blur-xl
+            hidden md:block border-l border-nexus-border bg-nexus-sidebar backdrop-blur-xl
             transition-all duration-300 ease-out overflow-hidden
             ${(isInfoOpen || activeThreadMessage) ? "w-80 opacity-100" : "w-0 opacity-0"}
           `}
@@ -354,6 +384,29 @@ export default function ChatLayout() {
           )}
         </div>
 
+        {/* Mobile Thread Panel overlay / drawer */}
+        {activeThreadMessage && (
+          <div
+            onClick={handleCloseThread}
+            className="md:hidden fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md h-full bg-nexus-sidebar/95 backdrop-blur-xl shadow-2xl flex flex-col animate-[slideInRight_0.2s_ease-out]"
+            >
+              <ThreadPanel
+                parentMessage={activeThreadMessage}
+                threadMessages={activeThreadMessage.thread_messages || []}
+                currentUserEmail={userEmail}
+                currentUserImage={profileImage}
+                onSendReply={handleThreadReply}
+                onClose={handleCloseThread}
+                isLoading={isThreadLoading}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Group Details Modal */}
         {activeGroup && (
           <GroupDetailsModal
@@ -377,6 +430,55 @@ export default function ChatLayout() {
           onNavigate={handleCommandPaletteNavigate}
           onAction={handleCommandPaletteAction}
         />
+
+        {/* Palette Modal (New Chat / New Group / Join Group) */}
+        <Modal
+          isOpen={paletteModal !== null}
+          onClose={() => setPaletteModal(null)}
+          title={
+            paletteModal === "group" ? "Create Workspace" :
+            paletteModal === "chat" ? "New Channel" :
+            paletteModal === "join" ? "Join Group" : ""
+          }
+        >
+          <div className="flex flex-col gap-4">
+            {paletteModal === "join" && (
+              <p className="text-sm text-nexus-muted">Enter the invite code shared by the group admin (e.g. NX7K-Q2R9).</p>
+            )}
+            <input
+              autoFocus
+              type="text"
+              aria-label={
+                paletteModal === "group" ? "Group Name" :
+                paletteModal === "chat" ? "Chat Title" : "Invite Code"
+              }
+              className="w-full rounded-xl bg-nexus-bg border border-nexus-border px-4 py-3 text-nexus-text text-sm focus:border-nexus-primary/50 focus:outline-none focus:ring-[3px] focus:ring-nexus-primary/10 transition-all"
+              placeholder={
+                paletteModal === "group" ? "Group Name..." :
+                paletteModal === "chat" ? "Chat Title..." : "Invite Code (e.g. NX7K-Q2R9)"
+              }
+              value={paletteInput}
+              onChange={(e) => setPaletteInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handlePaletteSubmit()}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPaletteModal(null)}
+                className="px-4 py-2 rounded-xl text-sm text-nexus-muted hover:bg-nexus-bg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePaletteSubmit}
+                className="px-4 py-2 rounded-xl text-sm bg-nexus-primary text-white hover:brightness-110 transition-all font-medium"
+              >
+                {paletteModal === "join" ? "Join" : "Create"}
+              </button>
+            </div>
+          </div>
+        </Modal>
       </div>
     </ErrorBoundary>
   )

@@ -26,12 +26,6 @@ export const QuickReactionPicker = memo(
         role="group"
         aria-label="Reaction picker"
       >
-        <style>{`
-          @keyframes scaleIn {
-            from { transform: scale(0.9); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-          }
-        `}</style>
         {EMOJIS.map((emoji) => (
           <button
             key={emoji}

@@ -71,15 +71,15 @@ const CodeBlockHeader = memo(function CodeBlockHeader({ language, code }: { lang
   }, [code])
 
   return (
-    <div className="bg-[#1a1a2e] px-4 py-1.5 text-[11px] text-nexus-muted/60 border-b border-white/[0.04] flex justify-between items-center select-none rounded-t-lg">
+    <div className="bg-nexus-surface/90 px-4 py-1.5 text-[11px] text-nexus-muted border-b border-nexus-border/40 flex justify-between items-center select-none rounded-t-lg">
       <span className="lowercase font-mono">{language}</span>
       <button
         type="button"
         onClick={handleCopy}
         aria-label="Copy code to clipboard"
-        className="hover:text-nexus-text transition-colors px-2 py-0.5 rounded hover:bg-white/5"
+        className="hover:text-nexus-text transition-colors px-2 py-0.5 rounded hover:bg-nexus-hover"
       >
-        {copied ? <span className="text-emerald-400">Copied</span> : "Copy"}
+        {copied ? <span className="text-emerald-500 font-medium">Copied</span> : "Copy"}
       </button>
     </div>
   )
@@ -191,7 +191,7 @@ const MessageBubble = memo(function MessageBubble({
                 ? "bg-nexus-primary/90 text-white rounded-br-sm"
                 : isAI
                 ? `bg-gradient-to-br from-nexus-surface to-nexus-card/80 text-nexus-text rounded-bl-sm border ${isStreaming ? "border-nexus-primary/30" : "border-nexus-primary/10"}`
-                : "bg-nexus-surface text-nexus-text rounded-bl-sm border border-white/[0.04]"
+                : "bg-nexus-surface text-nexus-text rounded-bl-sm border border-nexus-border/40"
               }
               ${isStreaming ? "streaming-bubble" : ""}
             `}
@@ -199,7 +199,7 @@ const MessageBubble = memo(function MessageBubble({
             {/* Context menu + reaction picker */}
             <div className={`
               absolute top-0.5 ${isMe ? "left-0 -translate-x-full pr-1" : "right-0 translate-x-full pl-1"}
-              flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150
+              flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 transition-opacity duration-150
             `}>
               {/* Quick reaction trigger */}
               <div className="relative">
@@ -236,20 +236,20 @@ const MessageBubble = memo(function MessageBubble({
                     <>
                       <button
                         onClick={() => { onReply?.(message); setShowMenu(false) }}
-                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
+                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-nexus-hover transition-colors flex items-center gap-2"
                       >
                         <Reply size={12} /> Reply
                       </button>
                       <button
                         onClick={() => { onOpenThread?.(); setShowMenu(false) }}
-                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
+                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-nexus-hover transition-colors flex items-center gap-2"
                       >
                         <MessageCircle size={12} /> Reply in thread
                       </button>
                       {isMe && (
                         <button
                           onClick={() => { setIsEditing(true); setShowMenu(false) }}
-                          className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors flex items-center gap-2"
+                          className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-nexus-hover transition-colors flex items-center gap-2"
                         >
                           <Pencil size={12} /> Edit
                         </button>
@@ -267,7 +267,7 @@ const MessageBubble = memo(function MessageBubble({
                       <div className="px-3 py-1 text-[9px] text-nexus-muted uppercase font-bold tracking-wider">Delete?</div>
                       <button
                         onClick={() => { onDelete(message.id, "me"); setShowMenu(false); setShowDeleteOptions(false) }}
-                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-white/5 transition-colors"
+                        className="w-full text-left px-3 py-1.5 text-xs text-nexus-text/80 hover:bg-nexus-hover transition-colors"
                       >
                         For Me
                       </button>
@@ -317,23 +317,48 @@ const MessageBubble = memo(function MessageBubble({
                   <textarea
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    className="bg-black/20 text-white rounded-lg p-2 text-sm w-full outline-none border border-white/10 resize-none min-h-[60px] focus:border-nexus-primary/50"
+                    className="bg-nexus-card text-nexus-text rounded-lg p-2 text-sm w-full outline-none border border-nexus-border/60 resize-none min-h-[60px] focus:border-nexus-primary/50"
                     autoFocus
                   />
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => setIsEditing(false)} className="text-[11px] text-nexus-muted hover:text-white px-2 py-1 rounded transition-colors flex items-center gap-1">
+                    <button onClick={() => setIsEditing(false)} className="text-[11px] text-nexus-muted hover:text-nexus-text px-2 py-1 rounded transition-colors flex items-center gap-1">
                       <X size={10} /> Cancel
                     </button>
-                    <button onClick={handleSaveEdit} className="text-[11px] bg-emerald-600/80 text-white px-3 py-1 rounded-md font-medium hover:bg-emerald-500 transition-colors flex items-center gap-1">
+                    <button onClick={handleSaveEdit} className="text-[11px] bg-emerald-600 text-white px-3 py-1 rounded-md font-medium hover:bg-emerald-500 transition-colors flex items-center gap-1">
                       <Check size={10} /> Save
                     </button>
                   </div>
                 </div>
               ) : isAI ? (
-                <div className="prose prose-invert prose-sm max-w-none [&_pre]:m-0 [&_pre]:bg-transparent [&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_ul]:mb-1.5 [&_ol]:mb-1.5 [&_li]:mb-0.5 [&_code]:text-emerald-300 [&_code]:bg-white/5 [&_code]:px-1 [&_code]:rounded [&_code]:text-[13px]">
+                <div className="prose dark:prose-invert prose-sm max-w-none text-nexus-text [&_pre]:m-0 [&_pre]:bg-transparent [&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_ul]:mb-1.5 [&_ol]:mb-1.5 [&_li]:mb-0.5 [&_code]:text-emerald-600 dark:[&_code]:text-emerald-300 [&_code]:bg-nexus-surface [&_code]:px-1 [&_code]:rounded [&_code]:text-[13px]">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
+                    urlTransform={(url) => {
+                      try {
+                        const parsed = new URL(url, window.location.origin)
+                        const allowedProtocols = ["http:", "https:", "mailto:", "tel:"]
+                        if (allowedProtocols.includes(parsed.protocol)) {
+                          return url
+                        }
+                        return ""
+                      } catch {
+                        return ""
+                      }
+                    }}
                     components={{
+                      a({ href, children, ...props }) {
+                        return (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-nexus-primary underline underline-offset-2 hover:brightness-110 transition-colors"
+                            {...props}
+                          >
+                            {children}
+                          </a>
+                        )
+                      },
                       code({ className, children, ...props }) {
                         const match = /language-(\w+)/.exec(className || "")
                         const codeString = String(children).replace(/\n$/, "")
@@ -404,32 +429,6 @@ const MessageBubble = memo(function MessageBubble({
           )}
         </div>
       </div>
-
-      <style>{`
-        @keyframes msgEnter {
-          from { opacity: 0; transform: translateY(10px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-        @keyframes shimmer {
-          0% { border-color: rgba(164, 22, 26, 0.1); }
-          50% { border-color: rgba(164, 22, 26, 0.35); }
-          100% { border-color: rgba(164, 22, 26, 0.1); }
-        }
-        .streaming-cursor {
-          display: inline;
-          color: rgb(164, 22, 26);
-          font-weight: 700;
-          animation: blink 0.8s step-end infinite;
-          margin-left: 1px;
-        }
-        .streaming-bubble {
-          animation: shimmer 2s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   )
 })

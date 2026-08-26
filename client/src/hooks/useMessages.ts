@@ -133,48 +133,46 @@ export function useMessages({
     }
 
     function onAiStreamChunk(data: { chatId: string; delta: string; isFinal: boolean; messageId: string }) {
-      if (data.chatId !== activeChatIdRef.current) return
-
-      setStreamingMessageId(data.messageId)
+      if (data.chatId === activeChatIdRef.current) {
+        setStreamingMessageId(data.messageId)
+      }
 
       setGroups((prev) =>
-        prev.map((group) =>
-          group.id === activeGroupIdRef.current
-            ? {
-                ...group,
-                chats: group.chats.map((chat) => {
-                  if (chat.id !== data.chatId) return chat
+        prev.map((group) => ({
+          ...group,
+          chats: group.chats.map((chat) => {
+            if (chat.id !== data.chatId) return chat
 
-                  const msgExists = chat.messages.some((m) => m.id === data.messageId)
-                  let newMessages = chat.messages
+            const msgExists = chat.messages.some((m) => m.id === data.messageId)
+            let newMessages = chat.messages
 
-                  if (!msgExists) {
-                    newMessages = [
-                      ...chat.messages,
-                      {
-                        id: data.messageId,
-                        role: "assistant",
-                        content: data.delta,
-                        sender: "Nexus AI",
-                        created_at: new Date().toISOString(),
-                      },
-                    ]
-                  } else {
-                    newMessages = chat.messages.map((m) =>
-                      m.id === data.messageId ? { ...m, content: m.content + data.delta } : m
-                    )
-                  }
+            if (!msgExists) {
+              newMessages = [
+                ...chat.messages,
+                {
+                  id: data.messageId,
+                  role: "assistant",
+                  content: data.delta,
+                  sender: "Nexus AI",
+                  created_at: new Date().toISOString(),
+                },
+              ]
+            } else {
+              newMessages = chat.messages.map((m) =>
+                m.id === data.messageId ? { ...m, content: m.content + data.delta } : m
+              )
+            }
 
-                  return { ...chat, messages: newMessages }
-                }),
-              }
-            : group
-        )
+            return { ...chat, messages: newMessages }
+          }),
+        }))
       )
 
       if (data.isFinal) {
         setIsTyping(false)
-        setStreamingMessageId(null)
+        if (data.chatId === activeChatIdRef.current) {
+          setStreamingMessageId(null)
+        }
       }
     }
 
@@ -304,12 +302,10 @@ export function useMessages({
 
 
   // Load message history when active chat changes or groups are loaded
-  useEffect(() => {
-    if (!activeGroupId || !activeChatId) return
+  const hasGroup = groups.some((g) => g.id === activeGroupId)
 
-    // If groups have not loaded into state yet, wait for fetchGroups
-    const hasGroup = groups.some((g) => g.id === activeGroupId)
-    if (!hasGroup) return
+  useEffect(() => {
+    if (!activeGroupId || !activeChatId || !hasGroup) return
 
     let isMounted = true
 
@@ -339,7 +335,7 @@ export function useMessages({
 
     loadHistory()
     return () => { isMounted = false }
-  }, [activeGroupId, activeChatId, groups.length, setGroups, setError])
+  }, [activeGroupId, activeChatId, hasGroup, setGroups, setError])
 
 
   // Actions

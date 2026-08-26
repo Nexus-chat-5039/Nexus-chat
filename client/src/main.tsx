@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom"
 import { WorkspaceProvider } from "./context/WorkspaceContext.tsx"
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx"
 import App from "./App"
+import "./stores/themeStore"
 import "./index.css"
 
 createRoot(document.getElementById("root")!).render(

@@ -82,7 +82,7 @@ export default function GroupDetailsModal({
                     type="button"
                     aria-label={`Remove member ${member}`}
                     onClick={() => onRemoveMember(group.id, member)}
-                    className="opacity-0 group-hover/member:opacity-100 text-red-400/60 hover:text-red-400 text-[10px] px-2 py-1 rounded-md hover:bg-red-500/10 transition-all"
+                    className="opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100 focus:opacity-100 text-red-400/60 hover:text-red-400 text-[10px] px-2 py-1 rounded-md hover:bg-red-500/10 transition-all"
                   >
                     Remove
                   </button>

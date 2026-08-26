@@ -335,16 +335,6 @@ export default function Onboarding() {
           )}
         </div>
       </div>
-
-      <style>{`
-        @keyframes confettiDrop {
-          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(400px) rotate(720deg); opacity: 0; }
-        }
-        @keyframes drawCheck {
-          to { stroke-dashoffset: 0; }
-        }
-      `}</style>
     </div>
   )
 }

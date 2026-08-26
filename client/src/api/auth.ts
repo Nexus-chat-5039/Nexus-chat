@@ -31,3 +31,8 @@ export async function uploadAvatar(file: File) {
   })
   return res.data
 }
+
+export async function deleteAccount() {
+  const res = await apiClient.delete("/api/auth/profile")
+  return res.data
+}

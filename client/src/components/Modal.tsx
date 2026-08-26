@@ -12,24 +12,69 @@ type Props = {
 export default function Modal({ isOpen, onClose, title, children }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const previousActiveElement = useRef<HTMLElement | null>(null)
 
-  // Escape key handler
+  // Save previous active element & restore on close + body scroll lock
+  useEffect(() => {
+    if (isOpen) {
+      previousActiveElement.current = document.activeElement as HTMLElement | null
+      const originalOverflow = document.body.style.overflow
+      document.body.style.overflow = "hidden"
+      return () => {
+        document.body.style.overflow = originalOverflow
+      }
+    } else if (previousActiveElement.current) {
+      previousActiveElement.current.focus()
+      previousActiveElement.current = null
+    }
+  }, [isOpen])
+
+  // Escape key & Tab focus trapping
   useEffect(() => {
     if (!isOpen) return
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose()
+        return
+      }
+
+      if (e.key === "Tab" && contentRef.current) {
+        const focusables = contentRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+        if (focusables.length === 0) return
+
+        const first = focusables[0]
+        const last = focusables[focusables.length - 1]
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault()
+            last.focus()
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault()
+            first.focus()
+          }
+        }
+      }
     }
-    window.addEventListener("keydown", handleKey)
-    return () => window.removeEventListener("keydown", handleKey)
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
   }, [isOpen, onClose])
 
-  // Focus trap
+  // Focus initial element on mount
   useEffect(() => {
     if (!isOpen || !contentRef.current) return
     const focusable = contentRef.current.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'input:not([disabled]), button:not([disabled]), [href], select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     )
-    if (focusable.length > 0) focusable[0].focus()
+    if (focusable.length > 0) {
+      focusable[0].focus()
+    }
   }, [isOpen])
 
   // Click outside to close
@@ -66,17 +111,6 @@ export default function Modal({ isOpen, onClose, title, children }: Props) {
         <h2 className="mb-5 text-lg font-semibold">{title}</h2>
         {children}
       </div>
-
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes scaleIn {
-          from { opacity: 0; transform: scale(0.96); }
-          to { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
     </div>,
     document.body
   )

@@ -3,6 +3,37 @@
 @tailwind utilities;
 
 @layer base {
+  :root,
+  .light {
+    --nexus-bg: 248 250 252;
+    --nexus-card: 255 255 255;
+    --nexus-surface: 241 245 249;
+    --nexus-text: 15 23 42;
+    --nexus-muted: 100 116 139;
+    --nexus-border: 212 218 228;
+    --nexus-primary: 224 60 49;
+    --nexus-primary-light: 238 82 72;
+    --nexus-input: 255 255 255;
+    --nexus-hover: 226 232 240;
+    --nexus-sidebar: 255 255 255;
+    --nexus-header: 255 255 255;
+  }
+
+  .dark {
+    --nexus-bg: 22 26 29;
+    --nexus-card: 30 34 40;
+    --nexus-surface: 35 40 48;
+    --nexus-text: 237 237 237;
+    --nexus-muted: 156 163 175;
+    --nexus-border: 47 52 61;
+    --nexus-primary: 164 22 26;
+    --nexus-primary-light: 196 30 34;
+    --nexus-input: 30 34 40;
+    --nexus-hover: 38 44 52;
+    --nexus-sidebar: 26 30 36;
+    --nexus-header: 26 30 36;
+  }
+
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
@@ -11,7 +42,8 @@
 
   body {
     @apply bg-nexus-bg text-nexus-text;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   ::selection {
@@ -29,25 +61,25 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: theme('colors.nexus.border');
+    background-color: rgb(var(--nexus-border));
     border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: theme('colors.nexus.muted');
+    background-color: rgb(var(--nexus-muted));
   }
 
   /* Firefox scrollbar */
   * {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.nexus.border') transparent;
+    scrollbar-color: rgb(var(--nexus-border)) transparent;
   }
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.nexus.border') transparent;
+    scrollbar-color: rgb(var(--nexus-border)) transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -59,13 +91,107 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: theme('colors.nexus.border');
+    background-color: rgb(var(--nexus-border));
     border-radius: 9999px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: theme('colors.nexus.muted');
+    background-color: rgb(var(--nexus-muted));
   }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .streaming-cursor {
+    display: inline;
+    color: rgb(var(--nexus-primary));
+    font-weight: 700;
+    animation: blink 0.8s step-end infinite;
+    margin-left: 1px;
+  }
+
+  .streaming-bubble {
+    animation: shimmer 2s ease-in-out infinite;
+  }
+
+  .animate-message {
+    animation: fadeInUp 0.4s ease-out forwards;
+    opacity: 0;
+  }
+}
+
+/* Global Keyframes */
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes shimmer {
+  0% { border-color: rgba(var(--nexus-primary), 0.1); }
+  50% { border-color: rgba(var(--nexus-primary), 0.35); }
+  100% { border-color: rgba(var(--nexus-primary), 0.1); }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mockupFloat {
+  0%, 100% { transform: rotateX(5deg) translateY(0); }
+  50% { transform: rotateX(5deg) translateY(-8px); }
+}
+
+@keyframes orbFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(40px, 30px) scale(1.05); }
+  66% { transform: translate(-20px, 50px) scale(0.95); }
+}
+
+@keyframes orbFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-30px, -40px) scale(1.08); }
+  66% { transform: translate(20px, -20px) scale(0.92); }
+}
+
+@keyframes confettiDrop {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(400px) rotate(720deg); opacity: 0; }
+}
+
+@keyframes drawCheck {
+  to { stroke-dashoffset: 0; }
 }
 
 /* Reduced motion */

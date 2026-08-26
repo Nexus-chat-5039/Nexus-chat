@@ -74,16 +74,9 @@ export const ThreadPanel = memo(
 
     return (
       <div
-        className="flex flex-col h-full w-80 bg-nexus-sidebar/80 backdrop-blur-xl"
+        className="flex flex-col h-full w-full md:w-80 bg-nexus-sidebar/80 backdrop-blur-xl"
         style={{ animation: "slideInRight 0.2s ease-out forwards" }}
       >
-        <style>{`
-          @keyframes slideInRight {
-            from { transform: translateX(20px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        `}</style>
-        
         {/* Header */}
         <div className="flex items-center justify-between h-14 px-4 border-b border-nexus-border/30 shrink-0">
           <h2 className="text-sm font-bold text-nexus-text">Thread</h2>
@@ -91,7 +84,7 @@ export const ThreadPanel = memo(
             type="button"
             aria-label="Close thread panel"
             onClick={onClose}
-            className="p-1.5 rounded-md text-nexus-muted hover:text-nexus-text hover:bg-nexus-hover transition-colors"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-nexus-muted hover:text-nexus-text hover:bg-nexus-hover transition-colors"
           >
             <X size={18} />
           </button>
@@ -203,7 +196,7 @@ export const ThreadPanel = memo(
               aria-label="Send thread reply"
               onClick={handleSend}
               disabled={!replyText.trim()}
-              className="p-1.5 rounded-lg bg-nexus-primary text-white hover:bg-nexus-primary-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 mb-0.5"
+              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg bg-nexus-primary text-white hover:bg-nexus-primary-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 mb-0.5"
             >
               <Send size={14} />
             </button>
